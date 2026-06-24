@@ -1,0 +1,464 @@
+import { useState, useEffect, useRef } from 'react'
+import { useParams, useNavigate, Link } from 'react-router-dom'
+import { Star, Users, Settings, Fuel, Heart, CheckCircle, ChevronRight, ChevronDown, Share2, Camera, Plus, Minus, Briefcase } from 'lucide-react'
+import { FaFacebookF, FaTwitter, FaWhatsapp } from 'react-icons/fa'
+import { getCarById, getCars } from '../api/cars'
+import { getCarReviews } from '../api/reviews'
+import { saveCar } from '../api/users'
+import useAuthStore from '../store/authStore'
+import Spinner from '../components/ui/Spinner'
+import { toast } from 'sonner'
+
+const DEFAULT_INCLUDED = ['Audio input', 'All Wheel drive', 'Bluetooth', 'USB input', 'Heated seats', 'FM Radio']
+const DEFAULT_EXCLUDED = ['GPS Navigation', 'Sunroof']
+
+function AccordionItem({ title, children, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div className="border-t border-gray-200">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center justify-between w-full py-4 text-left group"
+      >
+        <span className="font-semibold text-gray-800 text-sm uppercase tracking-wide group-hover:text-teal-600 transition-colors">
+          {title}
+        </span>
+        <span className="w-6 h-6 rounded-full border border-gray-300 flex items-center justify-center shrink-0 text-gray-500">
+          {open ? <Minus className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
+        </span>
+      </button>
+      {open && (
+        <div className="pb-5 text-sm text-gray-600 leading-relaxed">
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function CarDetail() {
+  const { id } = useParams()
+  const navigate = useNavigate()
+  const { user } = useAuthStore()
+
+  const [car, setCar]               = useState(null)
+  const [reviews, setReviews]       = useState([])
+  const [similar, setSimilar]       = useState([])
+  const [loading, setLoading]       = useState(true)
+  const [activeImg, setActiveImg]   = useState(0)
+  const [saved, setSaved]           = useState(false)
+  const [rentalType, setRentalType] = useState('day')
+  const [typeDropOpen, setTypeDropOpen] = useState(false)
+  const typeDropRef = useRef(null)
+
+  const viewCount = id ? ((parseInt(id.slice(-6), 16) % 600) + 150) : 544
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (typeDropRef.current && !typeDropRef.current.contains(e.target)) setTypeDropOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  useEffect(() => {
+    setLoading(true)
+    Promise.all([getCarById(id), getCarReviews(id)])
+      .then(([carRes, reviewRes]) => {
+        const loaded = carRes.data.data.car
+        setCar(loaded)
+        setReviews(reviewRes.data.data.reviews || [])
+        if (user?.savedCars) setSaved(user.savedCars.some(s => (s._id || s) === id))
+        return getCars({ type: loaded.type, limit: 4 })
+      })
+      .then(res => setSimilar((res.data.data.cars || []).filter(c => c._id !== id).slice(0, 3)))
+      .catch(() => navigate('/cars'))
+      .finally(() => setLoading(false))
+  }, [id, navigate, user])
+
+  const handleSave = async () => {
+    if (!user) return navigate('/login')
+    try {
+      const { data } = await saveCar(id)
+      setSaved(data.saved)
+      toast.success(data.message)
+    } catch { toast.error('Failed to save car') }
+  }
+
+  const handleBook = () => {
+    if (!car.isAvailable) return toast.error('This car is currently unavailable')
+    navigate(`/booking/${id}`, { state: { rentalType } })
+  }
+
+  const handleRequest = () => {
+    if (!car.isAvailable) return toast.error('This car is currently unavailable')
+    if (!user) return navigate('/login')
+    navigate(`/booking/${id}`, { state: { rentalType, mode: 'request' } })
+  }
+
+  if (loading) return <div className="flex justify-center items-center h-64"><Spinner size="lg" /></div>
+  if (!car) return null
+
+  const included   = car.features?.length ? car.features : DEFAULT_INCLUDED
+  const shareUrl   = typeof window !== 'undefined' ? window.location.href : ''
+
+  const RENTAL_TYPES = [
+    { key: 'day',     label: 'Per Day',          price: car.pricePerDay },
+    { key: 'hour',    label: 'Per Hour',          price: Math.round(car.pricePerDay / 8) },
+    { key: 'airport', label: 'Airport Transfer',  price: Math.round(car.pricePerDay * 0.4) },
+  ]
+  const activeType = RENTAL_TYPES.find(t => t.key === rentalType)
+  const primaryImg = car.images?.find(i => i.isPrimary) || car.images?.[0]
+
+  return (
+    <div className="bg-white min-h-screen">
+
+      {/* ── Hero Banner ───────────────────────────────────────────── */}
+      <div className="relative min-h-[320px] md:min-h-[440px] overflow-hidden">
+        {primaryImg ? (
+          <img
+            src={primaryImg.url}
+            alt={`${car.brand} ${car.model}`}
+            className="absolute inset-0 w-full h-full object-cover object-center"
+          />
+        ) : (
+          <div className="absolute inset-0 bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center text-8xl">🚗</div>
+        )}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/30 to-black/80" />
+        <div className="absolute inset-0 flex flex-col items-center justify-end pb-12 text-center px-4">
+          <h1 className="text-4xl md:text-6xl font-extrabold text-white mb-2 tracking-tight drop-shadow-lg">
+            {car.brand} {car.model}
+          </h1>
+          <p className="text-gray-300 text-sm md:text-base capitalize">
+            {car.type} · {car.year} · {car.color}
+          </p>
+        </div>
+        {/* Breadcrumb overlay */}
+        <div className="absolute top-4 left-0 right-0">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <nav className="flex items-center gap-1.5 text-sm text-white/80">
+              <Link to="/home" className="hover:text-white transition-colors">Home</Link>
+              <ChevronRight className="w-3.5 h-3.5" />
+              <Link to="/cars" className="hover:text-white transition-colors">Cars</Link>
+              <ChevronRight className="w-3.5 h-3.5" />
+              <span className="text-white font-medium">{car.brand} {car.model}</span>
+            </nav>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="flex flex-col lg:flex-row gap-10 items-start">
+
+          {/* ── LEFT COLUMN ─────────────────────────────────────── */}
+          <div className="flex-1 min-w-0">
+
+            {/* Thumbnail strip (if multiple images) */}
+            {car.images?.length > 1 && (
+              <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
+                {car.images.map((img, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setActiveImg(i)}
+                    className={`shrink-0 w-24 h-16 rounded-lg overflow-hidden border-2 transition-all ${
+                      activeImg === i ? 'border-teal-500' : 'border-transparent opacity-50 hover:opacity-100'
+                    }`}
+                  >
+                    <img src={img.url} alt="" className="w-full h-full object-contain object-center bg-gray-50" />
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Car title + rating + save */}
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-1.5">{car.brand} {car.model}</h2>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {car.rating > 0 && (
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <Star key={i} className={`w-4 h-4 ${i < Math.round(car.rating) ? 'fill-amber-400 text-amber-400' : 'text-gray-200'}`} />
+                      ))}
+                      <span className="text-sm text-gray-500 ml-1">{car.reviewCount} reviews</span>
+                    </div>
+                  )}
+                  {car.isFeatured && (
+                    <span className="text-xs bg-amber-50 text-amber-600 font-semibold px-2 py-0.5 rounded-full">Featured</span>
+                  )}
+                  {!car.isAvailable && (
+                    <span className="text-xs bg-red-50 text-red-500 font-semibold px-2 py-0.5 rounded-full">Unavailable</span>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={handleSave}
+                title={saved ? 'Remove from saved' : 'Save car'}
+                className={`shrink-0 flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border transition-colors ${
+                  saved
+                    ? 'bg-red-50 border-red-200 text-red-500'
+                    : 'border-gray-200 text-gray-500 hover:border-red-200 hover:text-red-400'
+                }`}
+              >
+                <Heart className={`w-4 h-4 ${saved ? 'fill-red-500' : ''}`} />
+                {saved ? 'Saved' : 'Save'}
+              </button>
+            </div>
+
+            {/* Spec icons row */}
+            <div className="grid grid-cols-4 divide-x divide-gray-200 border border-gray-200 rounded-xl overflow-hidden mb-8">
+              {[
+                { Icon: Users,     label: `${car.seats} Passengers` },
+                { Icon: Briefcase, label: '2 Luggages' },
+                { Icon: Settings,  label: car.transmission },
+                { Icon: Fuel,      label: car.fuelType },
+              ].map(({ Icon, label }) => (
+                <div key={label} className="flex flex-col items-center justify-center py-4 px-2 gap-2 bg-white">
+                  <Icon className="w-5 h-5 text-gray-500" />
+                  <span className="text-xs font-medium text-gray-700 text-center capitalize leading-tight">{label}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Accordion sections */}
+            <div className="mb-8 border-b border-gray-200">
+              {car.description && (
+                <AccordionItem title="About this Car" defaultOpen>
+                  <p>{car.description}</p>
+                </AccordionItem>
+              )}
+              <AccordionItem title="Refueling">
+                <p>The vehicle must be returned with the same fuel level as at pickup. If returned with less fuel, a refueling fee will be charged at the current market rate plus a service charge. Please keep the fuel receipt as proof.</p>
+              </AccordionItem>
+              <AccordionItem title="Car Wash">
+                <p>Please return the vehicle in a reasonably clean condition. Excessive dirt or soiling may result in a cleaning fee. Interior cleanliness is expected — any damage caused by spillage, pets, or food will incur additional charges at our discretion.</p>
+              </AccordionItem>
+              <AccordionItem title="No Smoking">
+                <p>Smoking is strictly prohibited in all our vehicles. Any evidence of smoking inside the vehicle will result in a mandatory deep-cleaning fee starting at ₹2,000, depending on severity. This policy applies to all passengers.</p>
+              </AccordionItem>
+            </div>
+
+            {/* Included / Not Included */}
+            <div className="mb-8">
+              <h2 className="text-lg font-bold text-gray-900 mb-5">Included &amp; Not Included</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <ul className="space-y-2.5">
+                  {included.map(f => (
+                    <li key={f} className="flex items-center gap-2.5 text-sm text-gray-700">
+                      <CheckCircle className="w-4 h-4 text-green-500 shrink-0" />
+                      <span className="capitalize">{f}</span>
+                    </li>
+                  ))}
+                </ul>
+                <ul className="space-y-2.5">
+                  {DEFAULT_EXCLUDED.map(f => (
+                    <li key={f} className="flex items-center gap-2.5 text-sm text-gray-400">
+                      <span className="w-4 h-4 shrink-0 flex items-center justify-center text-red-400 font-bold">✕</span>
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+
+            {/* Reviews */}
+            <div className="mb-8">
+              <div className="flex items-center justify-between mb-5">
+                <h2 className="text-lg font-bold text-gray-900">Customer Reviews</h2>
+                {car.rating > 0 && (
+                  <div className="flex items-center gap-1.5 bg-amber-50 px-3 py-1.5 rounded-lg">
+                    <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
+                    <span className="font-bold text-amber-700">{car.rating.toFixed(1)}</span>
+                    <span className="text-xs text-amber-500">/ 5</span>
+                  </div>
+                )}
+              </div>
+              {reviews.length === 0 ? (
+                <p className="text-sm text-gray-400 py-6 text-center">No reviews yet. Be the first to review after your trip!</p>
+              ) : (
+                <div className="space-y-5">
+                  {reviews.slice(0, 5).map(r => (
+                    <div key={r._id} className="border-b border-gray-100 pb-5 last:border-0 last:pb-0">
+                      <div className="flex items-center gap-3 mb-2">
+                        <div className="w-9 h-9 rounded-full bg-teal-500 flex items-center justify-center text-white font-bold text-sm shrink-0">
+                          {r.user?.name?.[0]?.toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900">{r.user?.name}</p>
+                          <div className="flex gap-0.5">
+                            {Array.from({ length: 5 }).map((_, i) => (
+                              <Star key={i} className={`w-3.5 h-3.5 ${i < r.rating ? 'fill-amber-400 text-amber-400' : 'text-gray-200'}`} />
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      {r.comment && <p className="text-sm text-gray-600 pl-12 leading-relaxed">{r.comment}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── RIGHT SIDEBAR ────────────────────────────────────── */}
+          <div className="w-full lg:w-80 xl:w-[360px] shrink-0 lg:sticky lg:top-24">
+            <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-md">
+
+              {/* Price + rental type dropdown */}
+              <div className="px-6 py-5 border-b border-gray-100">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-3xl font-bold text-gray-900">
+                      ₹{activeType?.price?.toLocaleString()}
+                    </span>
+                    <span className="text-gray-400 text-sm font-medium">{activeType?.label}</span>
+                  </div>
+
+                  {/* Dropdown toggle */}
+                  <div className="relative shrink-0" ref={typeDropRef}>
+                    <button
+                      onClick={() => setTypeDropOpen(o => !o)}
+                      className="flex items-center gap-1 text-sm font-medium text-teal-600 border border-teal-200 rounded-lg px-3 py-1.5 hover:bg-teal-50 transition-colors"
+                    >
+                      {activeType?.label}
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${typeDropOpen ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {typeDropOpen && (
+                      <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-100 rounded-xl shadow-xl py-1 z-50">
+                        {RENTAL_TYPES.map(t => (
+                          <button
+                            key={t.key}
+                            onClick={() => { setRentalType(t.key); setTypeDropOpen(false) }}
+                            className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                              rentalType === t.key
+                                ? 'bg-teal-50 text-teal-700 font-semibold'
+                                : 'text-gray-700 hover:bg-gray-50'
+                            }`}
+                          >
+                            <span className="block font-medium">{t.label}</span>
+                            <span className="text-xs text-gray-400">₹{t.price?.toLocaleString()}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {car.securityDeposit > 0 && (
+                  <p className="text-xs text-gray-400 mt-2">+ ₹{car.securityDeposit?.toLocaleString()} refundable deposit</p>
+                )}
+              </div>
+
+              {/* Book buttons */}
+              <div className="px-5 pt-5 pb-3 space-y-3">
+                <button
+                  onClick={handleBook}
+                  disabled={!car.isAvailable}
+                  className="w-full bg-teal-500 hover:bg-teal-600 disabled:opacity-40 text-white font-bold py-3.5 rounded-xl transition-colors text-sm tracking-wide uppercase"
+                >
+                  {car.isAvailable ? 'Book Instantly' : 'Currently Unavailable'}
+                </button>
+
+                <button
+                  onClick={handleRequest}
+                  disabled={!car.isAvailable}
+                  className="w-full border-2 border-teal-500 text-teal-600 hover:bg-teal-50 disabled:opacity-40 font-bold py-3.5 rounded-xl transition-colors text-sm tracking-wide uppercase"
+                >
+                  Request for Booking
+                </button>
+              </div>
+
+              {/* Quick specs */}
+              <div className="px-6 py-4 border-t border-gray-100 grid grid-cols-2 gap-3">
+                {[
+                  { label: 'Type', value: car.type },
+                  { label: 'Year', value: car.year },
+                  { label: 'Seats', value: `${car.seats} passengers` },
+                  { label: 'Fuel', value: car.fuelType },
+                  { label: 'Transmission', value: car.transmission },
+                  { label: 'Color', value: car.color },
+                ].map(({ label, value }) => (
+                  <div key={label}>
+                    <p className="text-xs text-gray-400 uppercase tracking-wide">{label}</p>
+                    <p className="text-sm font-medium text-gray-700 capitalize">{value}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Footer: views + share */}
+              <div className="px-5 pb-5 space-y-3">
+                <p className="text-center text-xs text-gray-400">
+                  Viewed <span className="font-semibold text-gray-600">{viewCount}</span> times this week
+                </p>
+
+                {/* Share */}
+                <div className="flex items-center justify-center gap-3">
+                  <span className="text-xs text-gray-400 flex items-center gap-1">
+                    <Share2 className="w-3.5 h-3.5" /> Share
+                  </span>
+                  <a href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`} target="_blank" rel="noopener noreferrer"
+                    className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-white hover:opacity-80 transition-opacity">
+                    <FaFacebookF size={11} />
+                  </a>
+                  <a href={`https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(`Check out this ${car.brand} ${car.model}!`)}`} target="_blank" rel="noopener noreferrer"
+                    className="w-7 h-7 rounded-full bg-sky-500 flex items-center justify-center text-white hover:opacity-80 transition-opacity">
+                    <FaTwitter size={11} />
+                  </a>
+                  <a href={`https://wa.me/?text=${encodeURIComponent(`Check out this ${car.brand} ${car.model}: ${shareUrl}`)}`} target="_blank" rel="noopener noreferrer"
+                    className="w-7 h-7 rounded-full bg-green-500 flex items-center justify-center text-white hover:opacity-80 transition-opacity">
+                    <FaWhatsapp size={11} />
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Similar Cars */}
+        {similar.length > 0 && (
+          <section className="mt-12 pt-8 border-t border-gray-200">
+            <h2 className="text-xl font-bold text-gray-900 mb-6">Similar Cars</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              {similar.map(c => {
+                const img = c.images?.find(i => i.isPrimary) || c.images?.[0]
+                return (
+                  <Link
+                    key={c._id}
+                    to={`/cars/${c._id}`}
+                    className="bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-lg transition-shadow group"
+                  >
+                    <div className="h-44 bg-gray-100 overflow-hidden relative">
+                      {img
+                        ? <img src={img.url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                        : <div className="w-full h-full flex items-center justify-center text-4xl">🚗</div>}
+                    </div>
+                    <div className="p-4">
+                      <h3 className="font-bold text-gray-900 mb-1">{c.brand} {c.model}</h3>
+                      {c.rating > 0 && (
+                        <div className="flex items-center gap-1 mb-2">
+                          {Array.from({ length: 5 }).map((_, i) => (
+                            <Star key={i} className={`w-3 h-3 ${i < Math.round(c.rating) ? 'fill-amber-400 text-amber-400' : 'text-gray-200'}`} />
+                          ))}
+                          <span className="text-xs text-gray-400 ml-0.5">{c.reviewCount} reviews</span>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-3 text-xs text-gray-500 mb-3">
+                        <span className="flex items-center gap-1"><Users className="w-3.5 h-3.5" />{c.seats} Passengers</span>
+                        <span className="flex items-center gap-1 capitalize"><Settings className="w-3.5 h-3.5" />{c.transmission}</span>
+                      </div>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-lg font-bold text-gray-900">₹{c.pricePerDay?.toLocaleString()}</span>
+                        <span className="text-xs text-gray-400">Per Day</span>
+                      </div>
+                    </div>
+                  </Link>
+                )
+              })}
+            </div>
+          </section>
+        )}
+      </div>
+    </div>
+  )
+}
