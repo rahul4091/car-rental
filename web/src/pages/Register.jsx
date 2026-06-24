@@ -12,7 +12,7 @@ export default function Register() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (form.password.length < 6) return toast.error('Password must be at least 6 characters')
+    if (form.password.length < 8) return toast.error('Password must be at least 8 characters')
     const result = await register(form)
     if (result.success) {
       toast.success('Account created! Welcome to DriveEase.')

@@ -161,7 +161,7 @@ export default function Profile() {
   const handlePasswordChange = async (e) => {
     e.preventDefault()
     if (pwForm.newPassword !== pwForm.confirmPassword) return toast.error('Passwords do not match')
-    if (pwForm.newPassword.length < 6) return toast.error('Minimum 6 characters')
+    if (pwForm.newPassword.length < 8) return toast.error('Minimum 8 characters')
     setSaving(true)
     try {
       await changePassword({ currentPassword: pwForm.currentPassword, newPassword: pwForm.newPassword })
@@ -473,7 +473,7 @@ export default function Profile() {
         <form onSubmit={handlePasswordChange} className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
           {[
             { label: 'Current Password', key: 'currentPassword', placeholder: '••••••••' },
-            { label: 'New Password',     key: 'newPassword',     placeholder: 'Min. 6 characters' },
+            { label: 'New Password',     key: 'newPassword',     placeholder: 'Min. 8 characters' },
             { label: 'Confirm New Password', key: 'confirmPassword', placeholder: 'Re-enter new password' },
           ].map(({ label, key, placeholder }) => (
             <div key={key}>
