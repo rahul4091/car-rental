@@ -1,3 +1,4 @@
+import "dotenv/config";
 import "express-async-errors";
 import express from "express";
 import cors from "cors";
@@ -6,9 +7,6 @@ import compression from "compression";
 import morgan from "morgan";
 import cookieParser from "cookie-parser";
 import { rateLimit } from "express-rate-limit";
-import dotenv from "dotenv";
-
-dotenv.config();
 
 import connectDB from "./config/db.js";
 import { logger } from "./utils/logger.js";
