@@ -2,7 +2,7 @@ import axios from 'axios'
 import useAuthStore from '../store/authStore'
 
 const api = axios.create({
-  baseURL: '/api/v1',
+  baseURL: import.meta.env.VITE_API_URL || '/api/v1',
   withCredentials: true,
 })
 
@@ -37,7 +37,7 @@ api.interceptors.response.use(
       original._retry = true
       isRefreshing = true
       try {
-        const { data } = await axios.post('/api/v1/auth/refresh-token', {}, { withCredentials: true })
+        const { data } = await axios.post(`${import.meta.env.VITE_API_URL || '/api/v1'}/auth/refresh-token`, {}, { withCredentials: true })
         const token = data.data.accessToken
         localStorage.setItem('accessToken', token)
         processQueue(null, token)
