@@ -4,6 +4,7 @@ import {
   getCarById,
   getFeaturedCars,
   checkCarAvailability,
+  getCarBookedDates,
   createCar,
   updateCar,
   addCarImages,
@@ -23,6 +24,7 @@ router.get("/featured", getFeaturedCars);
 router.get("/filters", getCarFilters);
 router.get("/:id", getCarById);
 router.get("/:id/availability", checkCarAvailability);
+router.get("/:id/booked-dates", getCarBookedDates);
 
 router.use(protect, authorize("admin"));
 router.post("/", uploadCarImages, createCar);

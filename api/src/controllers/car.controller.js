@@ -1,7 +1,20 @@
+import mongoose from "mongoose";
 import Car from "../model/car.model.js";
 import Booking from "../model/booking.model.js";
 import { AppError } from "../middleware/errorHandler.js";
 import { cloudinary } from "../config/cloudinary.js";
+
+const ACTIVE_BOOKING_STATUSES = ['pending', 'confirmed', 'active'];
+
+const ALLOWED_CAR_FIELDS = new Set([
+  'brand', 'model', 'year', 'type', 'color', 'transmission', 'fuelType',
+  'seats', 'pricePerDay', 'location', 'isFeatured', 'isAvailable', 'isActive',
+  'description', 'features', 'securityDeposit',
+]);
+
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 export const getCars = async (req, res) => {
   const {
@@ -26,10 +39,13 @@ export const getCars = async (req, res) => {
   const query = { isActive: true };
 
   if (type) query.type = { $in: type.split(",").map(t => t.toLowerCase()) };
-  if (brand) query.brand = { $in: brand.split(",").map(b => new RegExp(`^${b}$`, "i")) };
+  if (brand) query.brand = { $in: brand.split(",").map(b => new RegExp(`^${escapeRegex(b.trim())}$`, "i")) };
   if (transmission) query.transmission = transmission.toLowerCase();
   if (fuelType) query.fuelType = { $in: fuelType.split(",").map(f => f.toLowerCase()) };
-  if (location) query.location = location;
+  if (location) {
+    if (!mongoose.isValidObjectId(location)) throw new AppError('Invalid location ID', 400);
+    query.location = location;
+  }
   if (seats) query.seats = { $gte: parseInt(seats) };
   if (featured === "true") query.isFeatured = true;
   if (available !== undefined) query.isAvailable = available === "true";
@@ -46,8 +62,10 @@ export const getCars = async (req, res) => {
   if (pickupDate && dropDate) {
     const pickup = new Date(pickupDate);
     const drop = new Date(dropDate);
+    if (isNaN(pickup.getTime()) || isNaN(drop.getTime())) throw new AppError('Invalid date format', 400);
+    if (pickup >= drop) throw new AppError('Pickup date must be before drop date', 400);
     const bookedBookings = await Booking.find({
-      status: { $in: ["pending", "confirmed", "active"] },
+      status: { $in: ACTIVE_BOOKING_STATUSES },
       $or: [
         { pickupDate: { $lte: drop }, dropDate: { $gte: pickup } },
       ],
@@ -107,6 +125,31 @@ export const getFeaturedCars = async (req, res) => {
   res.json({ success: true, data: { cars } });
 };
 
+export const getCarBookedDates = async (req, res) => {
+  const { id } = req.params;
+
+  const car = await Car.findById(id);
+  if (!car || !car.isActive) throw new AppError('Car not found', 404);
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const bookings = await Booking.find({
+    car: id,
+    status: { $in: ACTIVE_BOOKING_STATUSES },
+    dropDate: { $gt: today },
+  })
+    .select('pickupDate dropDate')
+    .lean();
+
+  const bookedRanges = bookings.map(b => ({
+    from: b.pickupDate,
+    to: b.dropDate,
+  }));
+
+  res.json({ success: true, data: { bookedRanges } });
+};
+
 export const checkCarAvailability = async (req, res) => {
   const { id } = req.params;
   const { pickupDate, dropDate } = req.query;
@@ -115,22 +158,28 @@ export const checkCarAvailability = async (req, res) => {
 
   const pickup = new Date(pickupDate);
   const drop = new Date(dropDate);
+  if (isNaN(pickup.getTime()) || isNaN(drop.getTime())) throw new AppError('Invalid date format', 400);
+  if (pickup >= drop) throw new AppError('Pickup date must be before drop date', 400);
+
+  const car = await Car.findById(id);
+  if (!car || !car.isActive) throw new AppError("Car not found", 404);
 
   const conflict = await Booking.findOne({
     car: id,
-    status: { $in: ["pending", "confirmed", "active"] },
+    status: { $in: ACTIVE_BOOKING_STATUSES },
     pickupDate: { $lte: drop },
     dropDate: { $gte: pickup },
   });
 
-  const car = await Car.findById(id);
-  const available = !conflict && car?.isAvailable && car?.isActive;
+  const available = !conflict && car.isAvailable;
 
   res.json({ success: true, data: { available } });
 };
 
 export const createCar = async (req, res) => {
-  const carData = { ...req.body };
+  const carData = Object.fromEntries(
+    Object.entries(req.body).filter(([k]) => ALLOWED_CAR_FIELDS.has(k))
+  );
 
   if (req.files?.length > 0) {
     carData.images = req.files.map((f, i) => ({
@@ -145,7 +194,10 @@ export const createCar = async (req, res) => {
 };
 
 export const updateCar = async (req, res) => {
-  const car = await Car.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+  const updates = Object.fromEntries(
+    Object.entries(req.body).filter(([k]) => ALLOWED_CAR_FIELDS.has(k))
+  );
+  const car = await Car.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
   if (!car) throw new AppError("Car not found", 404);
 
   res.json({ success: true, message: "Car updated", data: { car } });
@@ -202,7 +254,11 @@ export const uploadCarDocument = async (req, res) => {
     [`documents.${docType}.url`]: req.file.path,
     [`documents.${docType}.verified`]: false,
   };
-  if (expiryDate) update[`documents.${docType}.expiryDate`] = new Date(expiryDate);
+  if (expiryDate) {
+    const parsedExpiry = new Date(expiryDate);
+    if (isNaN(parsedExpiry.getTime())) throw new AppError('Invalid expiry date', 400);
+    update[`documents.${docType}.expiryDate`] = parsedExpiry;
+  }
 
   const car = await Car.findByIdAndUpdate(id, update, { new: true });
   if (!car) throw new AppError("Car not found", 404);

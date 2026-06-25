@@ -1,13 +1,113 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { Star, Users, Settings, Fuel, Heart, CheckCircle, ChevronRight, ChevronDown, Share2, Camera, Plus, Minus, Briefcase } from 'lucide-react'
+import { Star, Users, Settings, Fuel, Heart, CheckCircle, ChevronRight, ChevronLeft, ChevronDown, Share2, Plus, Minus, Briefcase } from 'lucide-react'
 import { FaFacebookF, FaTwitter, FaWhatsapp } from 'react-icons/fa'
-import { getCarById, getCars } from '../api/cars'
+import { getCarById, getCars, getCarBookedDates } from '../api/cars'
 import { getCarReviews } from '../api/reviews'
 import { saveCar } from '../api/users'
 import useAuthStore from '../store/authStore'
 import Spinner from '../components/ui/Spinner'
 import { toast } from 'sonner'
+
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
+const DAY_NAMES = ['Su','Mo','Tu','We','Th','Fr','Sa']
+
+function AvailabilityCalendar({ bookedRanges }) {
+  const todayRef = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d }, [])
+  const [viewDate, setViewDate] = useState(new Date(todayRef.getFullYear(), todayRef.getMonth(), 1))
+
+  const year = viewDate.getFullYear()
+  const month = viewDate.getMonth()
+  const firstDayOfWeek = new Date(year, month, 1).getDay()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+
+  const parsedRanges = useMemo(() =>
+    bookedRanges
+      .filter(({ from, to }) => from && to)
+      .map(({ from, to }) => ({ from: from.slice(0, 10), to: to.slice(0, 10) })),
+    [bookedRanges])
+
+  const isBooked = (date) => {
+    const s = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    return parsedRanges.some(({ from, to }) => s >= from && s <= to)
+  }
+
+  const cells = [
+    ...Array(firstDayOfWeek).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, i) => new Date(year, month, i + 1)),
+  ]
+
+  const canGoPrev = viewDate > new Date(todayRef.getFullYear(), todayRef.getMonth(), 1)
+
+  return (
+    <div className="px-5 pb-5 pt-4 border-t border-gray-100">
+      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Availability Calendar</h3>
+
+      <div className="flex items-center justify-between mb-2">
+        <button
+          onClick={() => setViewDate(new Date(year, month - 1, 1))}
+          disabled={!canGoPrev}
+          className="p-1 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed text-gray-500"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        <span className="text-sm font-semibold text-gray-800">{MONTH_NAMES[month]} {year}</span>
+        <button
+          onClick={() => setViewDate(new Date(year, month + 1, 1))}
+          className="p-1 rounded hover:bg-gray-100 text-gray-500"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-7 mb-1">
+        {DAY_NAMES.map(d => (
+          <div key={d} className="text-center text-[10px] font-semibold text-gray-400 py-1">{d}</div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-7 gap-y-0.5">
+        {cells.map((date, i) => {
+          if (!date) return <div key={i} />
+          const isPast = date < todayRef
+          const isToday = date.getTime() === todayRef.getTime()
+          const booked = !isPast && isBooked(date)
+          const available = !isPast && !booked
+
+          return (
+            <div
+              key={i}
+              className={[
+                'text-center text-[11px] py-1 mx-0.5 rounded font-medium select-none',
+                isPast  ? 'text-gray-300' : '',
+                booked  ? 'bg-red-100 text-red-500' : '',
+                available ? 'bg-teal-50 text-teal-700' : '',
+                isToday ? 'ring-1 ring-teal-500' : '',
+              ].join(' ')}
+            >
+              {date.getDate()}
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="flex items-center gap-4 mt-3 flex-wrap">
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded bg-teal-50 border border-teal-300" />
+          <span className="text-[11px] text-gray-500">Available</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded bg-red-100" />
+          <span className="text-[11px] text-gray-500">Booked</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded border border-teal-500" />
+          <span className="text-[11px] text-gray-500">Today</span>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 const DEFAULT_INCLUDED = ['Audio input', 'All Wheel drive', 'Bluetooth', 'USB input', 'Heated seats', 'FM Radio']
 const DEFAULT_EXCLUDED = ['GPS Navigation', 'Sunroof']
@@ -44,6 +144,7 @@ export default function CarDetail() {
   const [car, setCar]               = useState(null)
   const [reviews, setReviews]       = useState([])
   const [similar, setSimilar]       = useState([])
+  const [bookedRanges, setBookedRanges] = useState([])
   const [loading, setLoading]       = useState(true)
   const [activeImg, setActiveImg]   = useState(0)
   const [saved, setSaved]           = useState(false)
@@ -69,11 +170,16 @@ export default function CarDetail() {
         setCar(loaded)
         setReviews(reviewRes.data.data.reviews || [])
         if (user?.savedCars) setSaved(user.savedCars.some(s => (s._id || s) === id))
-        return getCars({ type: loaded.type, limit: 4 })
+        getCars({ type: loaded.type, limit: 4 })
+          .then(res => setSimilar((res.data.data.cars || []).filter(c => c._id !== id).slice(0, 3)))
+          .catch(() => {})
       })
-      .then(res => setSimilar((res.data.data.cars || []).filter(c => c._id !== id).slice(0, 3)))
       .catch(() => navigate('/cars'))
       .finally(() => setLoading(false))
+
+    getCarBookedDates(id)
+      .then(res => setBookedRanges(res.data.data.bookedRanges || []))
+      .catch(() => {})
   }, [id, navigate, user])
 
   const handleSave = async () => {
@@ -86,6 +192,7 @@ export default function CarDetail() {
   }
 
   const handleBook = () => {
+    if (!user) return navigate('/login')
     if (!car.isAvailable) return toast.error('This car is currently unavailable')
     navigate(`/booking/${id}`, { state: { rentalType } })
   }
@@ -368,6 +475,9 @@ export default function CarDetail() {
                   Request for Booking
                 </button>
               </div>
+
+              {/* Availability Calendar */}
+              <AvailabilityCalendar bookedRanges={bookedRanges} />
 
               {/* Quick specs */}
               <div className="px-6 py-4 border-t border-gray-100 grid grid-cols-2 gap-3">
