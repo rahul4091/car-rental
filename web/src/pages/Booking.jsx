@@ -1,22 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useParams, useLocation, useNavigate } from 'react-router-dom'
-import { Calendar, Clock, User, Mail, Phone, Shield, Tag, ChevronRight, Plane } from 'lucide-react'
+import { Calendar, Clock, User, Mail, Phone, Shield, Tag, ChevronRight, Plane, MapPin } from 'lucide-react'
 import { getCarById } from '../api/cars'
 import { createBooking, applyCoupon } from '../api/bookings'
+import { getLocations } from '../api/locations'
 import useAuthStore from '../store/authStore'
 import Spinner from '../components/ui/Spinner'
 import { toast } from 'sonner'
-
-const TIME_SLOTS = Array.from({ length: 32 }, (_, i) => {
-  const totalMinutes = 6 * 60 + i * 30
-  const h = Math.floor(totalMinutes / 60)
-  const m = totalMinutes % 60
-  const ampm = h < 12 ? 'AM' : 'PM'
-  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h
-  return `${h12}:${m.toString().padStart(2, '0')} ${ampm}`
-})
-
-const HOUR_OPTIONS = [1, 2, 3, 4, 6, 8, 12]
+import { TIME_SLOTS, HOUR_OPTIONS } from '../constants/booking'
 
 const RENTAL_LABELS = { day: 'Per Day', hour: 'Per Hour', airport: 'Airport Transfer' }
 
@@ -46,6 +37,9 @@ export default function Booking() {
   const [coupon, setCoupon] = useState('')
   const [discountAmount, setDiscountAmount] = useState(0)
   const [couponApplied, setCouponApplied] = useState(false)
+  const [pickupLocation, setPickupLocation] = useState(state.pickupLocation?._id || '')
+  const [dropLocation, setDropLocation] = useState(state.dropLocation?._id || '')
+  const [locations, setLocations] = useState([])
 
   const today = new Date().toISOString().split('T')[0]
 
@@ -54,6 +48,7 @@ export default function Booking() {
       .then(res => setCar(res.data.data.car))
       .catch(() => navigate('/cars'))
       .finally(() => setLoading(false))
+    getLocations().then(res => setLocations(res.data.data.locations || [])).catch(() => toast.error('Could not load branch locations'))
   }, [carId, navigate])
 
   // Pricing per rental type
@@ -84,24 +79,21 @@ export default function Booking() {
   const securityDeposit = car?.securityDeposit || 0
   const total          = baseAmount - discountAmount + tax + securityDeposit
 
-  // Compute a dropDate for the API when it's not user-supplied
+  // Compute a synthetic dropDate for the backend date-range check
   const effectiveDropDate = (() => {
-    if (rentalType === 'day')     return dropDate
-    if (rentalType === 'airport') return pickupDate
-    if (rentalType === 'hour') {
-      if (!pickupDate) return ''
-      const d = new Date(pickupDate)
-      d.setDate(d.getDate() + Math.ceil(hours / 24))
-      return d.toISOString().split('T')[0]
-    }
-    return pickupDate
+    if (rentalType === 'day') return dropDate
+    if (!pickupDate) return ''
+    const d = new Date(pickupDate)
+    if (rentalType === 'hour')    d.setDate(d.getDate() + Math.ceil(hours / 24))
+    if (rentalType === 'airport') d.setDate(d.getDate() + 1)
+    return d.toISOString().split('T')[0]
   })()
 
   const validate = () => {
-    if (!pickupDate) return toast.error('Select a pickup date'), false
+    if (!pickupDate) { toast.error('Select a pickup date'); return false }
     if (rentalType === 'day') {
-      if (!dropDate) return toast.error('Select a drop-off date'), false
-      if (dropDate <= pickupDate) return toast.error('Drop-off date must be after pickup date'), false
+      if (!dropDate) { toast.error('Select a drop-off date'); return false }
+      if (dropDate <= pickupDate) { toast.error('Drop-off date must be after pickup date'); return false }
     }
     return true
   }
@@ -110,9 +102,13 @@ export default function Booking() {
     carId,
     pickupDate,
     dropDate: effectiveDropDate || pickupDate,
+    rentalType,
+    ...(rentalType === 'hour' && { totalHours: hours }),
     notes: [extraNotes, notes].filter(Boolean).join(' · ') || undefined,
     couponCode: couponApplied ? coupon : undefined,
-    driverDetails: { name, phone },
+    driverDetails: { name, email, phone },
+    pickupLocationId: pickupLocation || undefined,
+    dropLocationId: dropLocation || undefined,
   })
 
   const handleApplyCoupon = async () => {
@@ -411,6 +407,43 @@ export default function Booking() {
                 </>
               )}
             </div>
+
+            {/* Pickup & Drop Location */}
+            {locations.length > 0 && (
+              <div className="bg-white rounded-2xl border border-gray-200 p-6">
+                <h2 className="font-bold text-gray-900 mb-5 flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-teal-500" /> Pickup &amp; Drop-off Location
+                </h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-1.5">Pickup Location</label>
+                    <div className="flex items-center gap-2 border border-gray-200 rounded-xl px-3 py-2.5 focus-within:border-teal-400 transition-colors">
+                      <MapPin className="w-4 h-4 text-teal-500 shrink-0" />
+                      <select value={pickupLocation} onChange={e => setPickupLocation(e.target.value)}
+                        className="flex-1 text-sm outline-none text-gray-800 bg-transparent">
+                        <option value="">— Select branch —</option>
+                        {locations.filter(l => l.isPickupAvailable !== false).map(l => (
+                          <option key={l._id} value={l._id}>{l.name}, {l.city}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-1.5">Drop-off Location</label>
+                    <div className="flex items-center gap-2 border border-gray-200 rounded-xl px-3 py-2.5 focus-within:border-teal-400 transition-colors">
+                      <MapPin className="w-4 h-4 text-teal-500 shrink-0" />
+                      <select value={dropLocation} onChange={e => setDropLocation(e.target.value)}
+                        className="flex-1 text-sm outline-none text-gray-800 bg-transparent">
+                        <option value="">— Same as pickup —</option>
+                        {locations.filter(l => l.isDropAvailable !== false).map(l => (
+                          <option key={l._id} value={l._id}>{l.name}, {l.city}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Special Requests */}
             <div className="bg-white rounded-2xl border border-gray-200 p-6">

@@ -2,14 +2,18 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Phone, MapPin, Mail } from 'lucide-react'
 import { FaFacebookF, FaTwitter, FaInstagram, FaYoutube } from 'react-icons/fa'
+import { toast } from 'sonner'
 
 export default function Footer() {
   const [email, setEmail] = useState('')
 
   const handleSubscribe = (e) => {
     e.preventDefault()
+    toast.success('Thanks for subscribing! We\'ll keep you posted.')
     setEmail('')
   }
+
+  const noNav = (e) => e.preventDefault()
 
   return (
     <footer className="bg-[#111111] text-gray-400">
@@ -40,19 +44,19 @@ export default function Footer() {
               Your trusted partner for premium car rentals across India.
             </p>
             <div className="flex items-center gap-3">
-              <a href="#" aria-label="Facebook"
+              <a href="#" onClick={noNav} aria-label="Facebook"
                 className="w-9 h-9 rounded-full border border-gray-700 flex items-center justify-center text-gray-400 hover:border-teal-400 hover:text-teal-400 transition-colors">
                 <FaFacebookF size={14} />
               </a>
-              <a href="#" aria-label="Twitter"
+              <a href="#" onClick={noNav} aria-label="Twitter"
                 className="w-9 h-9 rounded-full border border-gray-700 flex items-center justify-center text-gray-400 hover:border-teal-400 hover:text-teal-400 transition-colors">
                 <FaTwitter size={14} />
               </a>
-              <a href="#" aria-label="Instagram"
+              <a href="#" onClick={noNav} aria-label="Instagram"
                 className="w-9 h-9 rounded-full border border-gray-700 flex items-center justify-center text-gray-400 hover:border-teal-400 hover:text-teal-400 transition-colors">
                 <FaInstagram size={14} />
               </a>
-              <a href="#" aria-label="YouTube"
+              <a href="#" onClick={noNav} aria-label="YouTube"
                 className="w-9 h-9 rounded-full border border-gray-700 flex items-center justify-center text-gray-400 hover:border-teal-400 hover:text-teal-400 transition-colors">
                 <FaYoutube size={14} />
               </a>
@@ -132,8 +136,8 @@ export default function Footer() {
             © {new Date().getFullYear()} DriveEase. All rights reserved.
           </p>
           <div className="flex items-center gap-4 text-xs text-gray-600">
-            <a href="#" className="hover:text-gray-400 transition-colors">Privacy Policy</a>
-            <a href="#" className="hover:text-gray-400 transition-colors">Terms of Service</a>
+            <a href="#" onClick={noNav} className="hover:text-gray-400 transition-colors">Privacy Policy</a>
+            <a href="#" onClick={noNav} className="hover:text-gray-400 transition-colors">Terms of Service</a>
           </div>
         </div>
       </div>

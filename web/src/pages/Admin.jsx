@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   LayoutDashboard, Users, CalendarCheck, Star, Tag,
   TrendingUp, TrendingDown, Car, CheckCircle, XCircle,
   Search, ChevronLeft, ChevronRight, Trash2,
   ToggleLeft, ToggleRight, Plus, X, AlertCircle,
-  MapPin, CreditCard, Edit2, Calendar,
+  MapPin, CreditCard, Edit2, Calendar, Upload, Link as LinkIcon,
 } from 'lucide-react'
 import {
   getDashboardStats,
@@ -15,6 +15,7 @@ import {
   getAdminPayments,
   getAdminCars, createAdminCar, updateAdminCar, deleteAdminCar,
   getAdminLocations, createAdminLocation, updateAdminLocation, deleteAdminLocation,
+  uploadAdminCarImages,
 } from '../api/admin'
 import { refundPayment } from '../api/payments'
 import { getLocations } from '../api/locations'
@@ -1020,6 +1021,9 @@ function CarsTab() {
   const [form, setForm]         = useState(CAR_BLANK)
   const [saving, setSaving]     = useState(false)
   const [search, setSearch]     = useState('')
+  const [imageFile, setImageFile]   = useState(null)
+  const [imagePreview, setImagePreview] = useState(null)
+  const imgInputRef = useRef(null)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -1035,7 +1039,9 @@ function CarsTab() {
 
   useEffect(() => { load() }, [load])
 
-  const openCreate = () => { setForm(CAR_BLANK); setModal('create') }
+  const resetImageState = () => { setImageFile(null); setImagePreview(null) }
+
+  const openCreate = () => { setForm(CAR_BLANK); resetImageState(); setModal('create') }
   const openEdit   = (car) => {
     setForm({
       brand: car.brand, model: car.model, year: car.year, type: car.type,
@@ -1044,7 +1050,18 @@ function CarsTab() {
       description: car.description || '', imageUrl: car.images?.[0]?.url || '',
       location: car.location?._id || '', isAvailable: car.isAvailable, isFeatured: car.isFeatured,
     })
+    resetImageState()
     setModal(car)
+  }
+
+  const handleImageFileChange = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!['image/jpeg','image/jpg','image/png','image/webp'].includes(file.type))
+      return toast.error('Only JPEG, PNG, or WebP images allowed')
+    if (file.size > 5 * 1024 * 1024) return toast.error('Image must be under 5 MB')
+    setImageFile(file)
+    setImagePreview(URL.createObjectURL(file))
   }
 
   const handleSave = async (e) => {
@@ -1062,8 +1079,22 @@ function CarsTab() {
         location: form.location || undefined,
       }
       delete payload.imageUrl
-      if (modal === 'create') await createAdminCar(payload)
-      else await updateAdminCar(modal._id, payload)
+
+      let carId
+      if (modal === 'create') {
+        const { data } = await createAdminCar(payload)
+        carId = data.data.car._id
+      } else {
+        await updateAdminCar(modal._id, payload)
+        carId = modal._id
+      }
+
+      if (imageFile && carId) {
+        const fd = new FormData()
+        fd.append('images', imageFile)
+        await uploadAdminCarImages(carId, fd)
+      }
+
       toast.success(modal === 'create' ? 'Car created' : 'Car updated')
       setModal(null)
       load()
@@ -1224,9 +1255,31 @@ function CarsTab() {
                 </div>
               </div>
               <div>
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-1">Image URL</label>
-                <input value={form.imageUrl} onChange={e => setForm(p => ({...p,imageUrl:e.target.value}))}
-                  placeholder="https://..." className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-teal-400" />
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-1">Car Image</label>
+                <input ref={imgInputRef} type="file" accept="image/jpeg,image/jpg,image/png,image/webp"
+                  className="hidden" onChange={handleImageFileChange} />
+                {imagePreview ? (
+                  <div className="relative mb-2 w-full h-36 rounded-lg overflow-hidden border border-gray-200">
+                    <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+                    <button type="button"
+                      onClick={() => { resetImageState(); if (imgInputRef.current) imgInputRef.current.value = '' }}
+                      className="absolute top-2 right-2 bg-black/60 text-white w-6 h-6 rounded-full flex items-center justify-center hover:bg-black/80">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : null}
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => imgInputRef.current?.click()}
+                    className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 border border-gray-200 rounded-lg hover:border-teal-400 hover:text-teal-600 transition-colors">
+                    <Upload className="w-3.5 h-3.5" /> Upload file
+                  </button>
+                  <div className="flex-1 flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-2 focus-within:border-teal-400 transition-colors">
+                    <LinkIcon className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                    <input value={form.imageUrl} onChange={e => setForm(p => ({...p,imageUrl:e.target.value}))}
+                      placeholder="Or paste image URL..." className="flex-1 text-xs outline-none text-gray-700 bg-transparent" />
+                  </div>
+                </div>
+                {imageFile && <p className="text-xs text-teal-600 mt-1">File selected: {imageFile.name}</p>}
               </div>
               <div>
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-1">Description</label>
@@ -1440,6 +1493,7 @@ function PaymentsTab() {
   const [payments, setPayments] = useState([])
   const [loading, setLoading]   = useState(true)
   const [total, setTotal]       = useState(0)
+  const [totalRevenue, setTotalRevenue] = useState(0)
   const [refunding, setRefunding] = useState(null)
 
   const load = useCallback(() => {
@@ -1449,6 +1503,7 @@ function PaymentsTab() {
         const data = r.data.data
         setPayments(data.payments || [])
         setTotal(data.pagination?.total || 0)
+        setTotalRevenue(data.totalRevenue || 0)
       })
       .catch(() => toast.error('Failed to load payments'))
       .finally(() => setLoading(false))
@@ -1470,14 +1525,12 @@ function PaymentsTab() {
     }
   }
 
-  const revenue = payments.filter(p => p.status === 'succeeded').reduce((s, p) => s + (p.amount || 0), 0)
-
   return (
     <div>
       <div className="grid grid-cols-3 gap-4 mb-6">
         {[
           { label: 'Total Transactions', value: total, color: 'text-gray-900' },
-          { label: 'Total Revenue',      value: `₹${fmt(revenue)}`, color: 'text-teal-600' },
+          { label: 'Total Revenue',      value: `₹${fmt(totalRevenue)}`, color: 'text-teal-600' },
           { label: 'Succeeded',          value: payments.filter(p => p.status === 'succeeded').length, color: 'text-green-600' },
         ].map(({ label, value, color }) => (
           <div key={label} className="bg-white border border-gray-200 rounded-xl p-4">

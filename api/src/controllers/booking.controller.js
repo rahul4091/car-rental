@@ -1,13 +1,14 @@
 import Booking from "../model/booking.model.js";
 import Car from "../model/car.model.js";
 import Coupon from "../model/coupon.model.js";
+import Payment from "../model/payment.model.js";
 import { AppError } from "../middleware/errorHandler.js";
 import { sendBookingConfirmationEmail } from "../utils/email.utils.js";
 
 const TAX_RATE = 0.18;
 
 export const createBooking = async (req, res) => {
-  const { carId, pickupLocationId, dropLocationId, pickupDate, dropDate, couponCode, driverDetails, notes } = req.body;
+  const { carId, pickupLocationId, dropLocationId, pickupDate, dropDate, couponCode, driverDetails, notes, rentalType, totalHours } = req.body;
 
   const pickup = new Date(pickupDate);
   const drop = new Date(dropDate);
@@ -26,9 +27,20 @@ export const createBooking = async (req, res) => {
   const car = await Car.findById(carId);
   if (!car || !car.isActive || !car.isAvailable) throw new AppError("Car not available", 404);
 
+  // Fix #7: price by rental type
   const msPerDay = 24 * 60 * 60 * 1000;
-  const totalDays = Math.max(1, Math.ceil((drop - pickup) / msPerDay));
-  const baseAmount = totalDays * car.pricePerDay;
+  let totalDays, baseAmount;
+  if (rentalType === "hour" && totalHours > 0) {
+    const pricePerHour = Math.round(car.pricePerDay / 8);
+    baseAmount = pricePerHour * totalHours;
+    totalDays = 0;
+  } else if (rentalType === "airport") {
+    baseAmount = Math.round(car.pricePerDay * 0.4);
+    totalDays = 1;
+  } else {
+    totalDays = Math.max(1, Math.ceil((drop - pickup) / msPerDay));
+    baseAmount = totalDays * car.pricePerDay;
+  }
 
   let discountAmount = 0;
   let appliedCoupon = null;
@@ -42,19 +54,31 @@ export const createBooking = async (req, res) => {
     });
 
     if (!coupon) throw new AppError("Invalid or expired coupon code", 400);
-    if (coupon.usageLimit && coupon.usageCount >= coupon.usageLimit) {
-      throw new AppError("Coupon usage limit reached", 400);
-    }
     if (baseAmount < coupon.minBookingAmount) {
       throw new AppError(`Minimum booking amount ₹${coupon.minBookingAmount} required`, 400);
     }
-    const userUsage = coupon.usedBy.filter((id) => id.toString() === req.user._id.toString()).length;
-    if (userUsage >= coupon.perUserLimit) throw new AppError("Coupon already used", 400);
 
+    // Fix #4: atomic coupon claim — check + increment in one query to prevent race
+    const claimed = await Coupon.findOneAndUpdate(
+      {
+        _id: coupon._id,
+        ...(coupon.usageLimit ? { usageCount: { $lt: coupon.usageLimit } } : {}),
+        $expr: {
+          $lt: [
+            { $size: { $filter: { input: "$usedBy", as: "u", cond: { $eq: ["$$u", req.user._id] } } } },
+            coupon.perUserLimit,
+          ],
+        },
+      },
+      { $inc: { usageCount: 1 }, $push: { usedBy: req.user._id } }
+    );
+    if (!claimed) throw new AppError("Coupon already used or limit reached", 400);
+
+    // Fix #8: cap flat coupon at baseAmount to prevent negative total
     discountAmount =
       coupon.type === "percentage"
         ? Math.min(baseAmount * (coupon.value / 100), coupon.maxDiscountAmount || Infinity)
-        : coupon.value;
+        : Math.min(coupon.value, baseAmount);
 
     appliedCoupon = coupon._id;
   }
@@ -71,6 +95,8 @@ export const createBooking = async (req, res) => {
     pickupDate: pickup,
     dropDate: drop,
     totalDays,
+    ...(rentalType === "hour" && { totalHours }),
+    rentalType: rentalType || "day",
     pricePerDay: car.pricePerDay,
     baseAmount,
     discountAmount,
@@ -82,13 +108,6 @@ export const createBooking = async (req, res) => {
     notes,
     status: "pending",
   });
-
-  if (appliedCoupon) {
-    await Coupon.findByIdAndUpdate(appliedCoupon, {
-      $inc: { usageCount: 1 },
-      $push: { usedBy: req.user._id },
-    });
-  }
 
   const populatedBooking = await Booking.findById(booking._id)
     .populate("car", "name brand model images")
@@ -106,11 +125,13 @@ export const createBooking = async (req, res) => {
   res.status(201).json({ success: true, message: "Booking created", data: { booking: populatedBooking } });
 };
 
+const VALID_STATUSES = ["pending", "confirmed", "active", "completed", "cancelled", "no-show"];
+
 export const getMyBookings = async (req, res) => {
   const { page = 1, limit = 10, status } = req.query;
 
   const query = { user: req.user._id };
-  if (status) query.status = status;
+  if (status && VALID_STATUSES.includes(status)) query.status = status;
 
   const [bookings, total] = await Promise.all([
     Booking.find(query)
@@ -208,8 +229,17 @@ export const rescheduleBooking = async (req, res) => {
   const msPerDay = 24 * 60 * 60 * 1000;
   const totalDays = Math.max(1, Math.ceil((drop - pickup) / msPerDay));
   const baseAmount = totalDays * car.pricePerDay;
-  const taxAmount = Math.round(baseAmount * TAX_RATE);
-  const totalAmount = baseAmount + taxAmount + car.securityDeposit;
+  // Fix #9: preserve original coupon discount when recalculating after reschedule
+  const discountAmount = booking.discountAmount || 0;
+  const taxableAmount = baseAmount - discountAmount;
+  const taxAmount = Math.round(taxableAmount * TAX_RATE);
+  const totalAmount = taxableAmount + taxAmount + car.securityDeposit;
+
+  // Fix #3: void any pending Razorpay order so user can't pay old (lower) amount
+  if (booking.paymentStatus !== "paid") {
+    await Payment.deleteOne({ booking: booking._id, status: "pending" });
+    booking.paymentStatus = "pending";
+  }
 
   booking.pickupDate = pickup;
   booking.dropDate = drop;

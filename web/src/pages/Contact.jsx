@@ -11,9 +11,10 @@ const CONTACT_INFO = [
 
 export default function Contact() {
   const [form, setForm] = useState({ name: '', email: '', subject: '', message: '' })
-  const [sending, setSending]   = useState(false)
-  const [sent, setSent]         = useState(false)
-  const [errors, setErrors]     = useState({})
+  const [sending, setSending]       = useState(false)
+  const [sent, setSent]             = useState(false)
+  const [submittedEmail, setSubmittedEmail] = useState('')
+  const [errors, setErrors]         = useState({})
 
   const validate = () => {
     const e = {}
@@ -38,6 +39,7 @@ export default function Contact() {
     setSending(true)
     try {
       await api.post('/contact', form)
+      setSubmittedEmail(form.email)
       setSent(true)
       setForm({ name: '', email: '', subject: '', message: '' })
     } catch (err) {
@@ -106,7 +108,7 @@ export default function Contact() {
                   </div>
                   <h3 className="text-xl font-bold text-gray-900 mb-2">Message Sent!</h3>
                   <p className="text-gray-500 mb-6">
-                    Thank you for reaching out. We&apos;ll reply to <strong>{form.email || 'your email'}</strong> within 24 hours.
+                    Thank you for reaching out. We&apos;ll reply to <strong>{submittedEmail}</strong> within 24 hours.
                   </p>
                   <button
                     onClick={() => setSent(false)}

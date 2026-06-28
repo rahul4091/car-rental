@@ -7,6 +7,7 @@ import api from '../api/client'
 import useAuthStore from '../store/authStore'
 import { toast } from 'sonner'
 import Spinner from '../components/ui/Spinner'
+import ConfirmModal from '../components/ui/ConfirmModal'
 
 const TABS = [
   { id: 'info',     label: 'Personal Info',   icon: User },
@@ -45,8 +46,10 @@ export default function Profile() {
   })
   const [licenseForm, setLicenseForm] = useState({ number: '', expiryDate: '' })
   const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' })
-  const [reviews, setReviews]   = useState([])
+  const [reviews, setReviews]               = useState([])
   const [reviewsLoading, setReviewsLoading] = useState(false)
+  const [hasLoadedReviews, setHasLoadedReviews] = useState(false)
+  const [deleteConfirmId, setDeleteConfirmId]   = useState(null)
   const [editingReview, setEditingReview]   = useState(null)
   const [editComment, setEditComment]       = useState('')
   const [editRating, setEditRating]         = useState(5)
@@ -93,7 +96,7 @@ export default function Profile() {
   }
 
   useEffect(() => {
-    if (tab === 'reviews' && reviews.length === 0 && !reviewsLoading) loadReviews()
+    if (tab === 'reviews' && !hasLoadedReviews && !reviewsLoading) loadReviews()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab])
 
@@ -102,6 +105,7 @@ export default function Profile() {
     try {
       const { data } = await getMyReviews()
       setReviews(data.data.reviews || [])
+      setHasLoadedReviews(true)
     } catch { toast.error('Failed to load reviews') }
     finally { setReviewsLoading(false) }
   }
@@ -115,8 +119,9 @@ export default function Profile() {
     } catch { toast.error('Failed to update review') }
   }
 
-  const handleDeleteReview = async (id) => {
-    if (!confirm('Delete this review?')) return
+  const handleDeleteReviewConfirmed = async () => {
+    const id = deleteConfirmId
+    setDeleteConfirmId(null)
     try {
       await deleteReview(id)
       setReviews(prev => prev.filter(r => r._id !== id))
@@ -187,6 +192,15 @@ export default function Profile() {
   if (loading) return <div className="flex justify-center items-center h-64"><Spinner size="lg" /></div>
 
   return (
+    <>
+    {deleteConfirmId && (
+      <ConfirmModal
+        message="Delete this review? This cannot be undone."
+        confirmLabel="Yes, delete"
+        onConfirm={handleDeleteReviewConfirmed}
+        onCancel={() => setDeleteConfirmId(null)}
+      />
+    )}
     <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Hidden file input */}
       <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
@@ -253,7 +267,15 @@ export default function Profile() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <InputField label="Full Name" icon={User} type="text" required value={form.name}
                 onChange={e => setForm(p => ({ ...p, name: e.target.value }))} />
-              <InputField label="Email" icon={Mail} type="email" value={user?.email} disabled />
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-1.5">
+                  Email <span className="normal-case font-normal text-gray-400">(cannot change)</span>
+                </label>
+                <div className="flex items-center gap-2 border border-gray-100 rounded-lg px-3 py-2.5 bg-gray-50 cursor-not-allowed">
+                  <Mail className="w-4 h-4 text-gray-300 shrink-0" />
+                  <span className="flex-1 text-sm text-gray-400 select-none">{user?.email}</span>
+                </div>
+              </div>
               <InputField label="Phone" icon={Phone} type="tel" value={form.phone} placeholder="+91 98765 43210"
                 onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} />
             </div>
@@ -289,11 +311,8 @@ export default function Profile() {
       {/* ── My Reviews ───────────────────────────────────── */}
       {tab === 'reviews' && (
         <div>
-          {reviews.length === 0 && !reviewsLoading && (
-            <button onClick={loadReviews} className="mb-4 text-sm text-teal-600 hover:underline">Load my reviews</button>
-          )}
           {reviewsLoading && <div className="flex justify-center py-10"><Spinner size="lg" /></div>}
-          {!reviewsLoading && reviews.length === 0 && (
+          {!reviewsLoading && hasLoadedReviews && reviews.length === 0 && (
             <div className="text-center py-20 bg-white border border-gray-200 rounded-xl">
               <Star className="w-10 h-10 text-gray-200 mx-auto mb-3" />
               <h3 className="font-semibold text-gray-900 mb-1">No reviews yet</h3>
@@ -360,7 +379,7 @@ export default function Profile() {
                       >
                         <Edit2 className="w-4 h-4" />
                       </button>
-                      <button onClick={() => handleDeleteReview(r._id)}
+                      <button onClick={() => setDeleteConfirmId(r._id)}
                         className="text-gray-400 hover:text-red-500 transition-colors" title="Delete review">
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -493,5 +512,6 @@ export default function Profile() {
         </form>
       )}
     </div>
+    </>
   )
 }

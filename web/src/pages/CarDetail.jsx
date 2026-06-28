@@ -1,13 +1,16 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useParams, useNavigate, Link, useLocation } from 'react-router-dom'
 import { Star, Users, Settings, Fuel, Heart, CheckCircle, ChevronRight, ChevronLeft, ChevronDown, Share2, Plus, Minus, Briefcase } from 'lucide-react'
 import { FaFacebookF, FaTwitter, FaWhatsapp } from 'react-icons/fa'
 import { getCarById, getCars, getCarBookedDates } from '../api/cars'
 import { getCarReviews } from '../api/reviews'
 import { saveCar } from '../api/users'
+import { createBooking } from '../api/bookings'
+import { getLocations } from '../api/locations'
 import useAuthStore from '../store/authStore'
 import Spinner from '../components/ui/Spinner'
 import { toast } from 'sonner'
+import { TIME_SLOTS, HOUR_OPTIONS } from '../constants/booking'
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
 const DAY_NAMES = ['Su','Mo','Tu','We','Th','Fr','Sa']
@@ -110,7 +113,6 @@ function AvailabilityCalendar({ bookedRanges }) {
 }
 
 const DEFAULT_INCLUDED = ['Audio input', 'All Wheel drive', 'Bluetooth', 'USB input', 'Heated seats', 'FM Radio']
-const DEFAULT_EXCLUDED = ['GPS Navigation', 'Sunroof']
 
 function AccordionItem({ title, children, defaultOpen = false }) {
   const [open, setOpen] = useState(defaultOpen)
@@ -139,6 +141,7 @@ function AccordionItem({ title, children, defaultOpen = false }) {
 export default function CarDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const { user } = useAuthStore()
 
   const [car, setCar]               = useState(null)
@@ -152,7 +155,22 @@ export default function CarDetail() {
   const [typeDropOpen, setTypeDropOpen] = useState(false)
   const typeDropRef = useRef(null)
 
-  const viewCount = id ? ((parseInt(id.slice(-6), 16) % 600) + 150) : 544
+  // Inline booking form state
+  const today = new Date().toISOString().split('T')[0]
+  const [formName, setFormName]               = useState('')
+  const [formEmail, setFormEmail]             = useState('')
+  const [formPhone, setFormPhone]             = useState('')
+  const [formPickupAddress, setFormPickupAddress] = useState('')
+  const [formDropAddress, setFormDropAddress] = useState('')
+  const [formPickupDate, setFormPickupDate]   = useState('')
+  const [formPickupTime, setFormPickupTime]   = useState('')
+  const [formDropDate, setFormDropDate]       = useState('')
+  const [formDropTime, setFormDropTime]       = useState('')
+  const [formHours, setFormHours]             = useState(2)
+  const [formSubmitting, setFormSubmitting]   = useState(false)
+  const [locations, setLocations]             = useState([])
+  const [formPickupLocation, setFormPickupLocation] = useState(location.state?.pickupLocation?._id || '')
+  const [formDropLocation, setFormDropLocation]     = useState(location.state?.dropLocation?._id   || '')
 
   useEffect(() => {
     const handler = (e) => {
@@ -180,7 +198,20 @@ export default function CarDetail() {
     getCarBookedDates(id)
       .then(res => setBookedRanges(res.data.data.bookedRanges || []))
       .catch(() => {})
+
+    getLocations()
+      .then(res => setLocations(res.data.data.locations || []))
+      .catch(() => {})
   }, [id, navigate, user])
+
+  // Pre-fill form from user profile
+  useEffect(() => {
+    if (user) {
+      setFormName(user.name || '')
+      setFormEmail(user.email || '')
+      setFormPhone(user.phone || '')
+    }
+  }, [user])
 
   const handleSave = async () => {
     if (!user) return navigate('/login')
@@ -191,23 +222,89 @@ export default function CarDetail() {
     } catch { toast.error('Failed to save car') }
   }
 
-  const handleBook = () => {
-    if (!user) return navigate('/login')
-    if (!car.isAvailable) return toast.error('This car is currently unavailable')
-    navigate(`/booking/${id}`, { state: { rentalType } })
+  const validateForm = () => {
+    if (!user) { navigate('/login', { state: { from: location } }); return false }
+    if (!car.isAvailable) { toast.error('This car is currently unavailable'); return false }
+    if (!formName.trim()) { toast.error('Enter your full name'); return false }
+    if (!formEmail.trim()) { toast.error('Enter your email address'); return false }
+    if (!formPickupDate) { toast.error('Select a pickup date'); return false }
+    if (!formPickupTime) { toast.error('Select a pickup time'); return false }
+    if (rentalType === 'day') {
+      if (!formDropDate) { toast.error('Select a drop-off date'); return false }
+      if (formDropDate <= formPickupDate) { toast.error('Drop-off date must be after pickup date'); return false }
+    }
+    return true
   }
 
-  const handleRequest = () => {
-    if (!car.isAvailable) return toast.error('This car is currently unavailable')
-    if (!user) return navigate('/login')
-    navigate(`/booking/${id}`, { state: { rentalType, mode: 'request' } })
+  const buildFormPayload = (extraNotes = '') => {
+    const effectiveDropDate = (() => {
+      if (rentalType === 'day') return formDropDate
+      if (!formPickupDate) return ''
+      const d = new Date(formPickupDate)
+      if (rentalType === 'hour')    d.setDate(d.getDate() + Math.ceil(formHours / 24))
+      if (rentalType === 'airport') d.setDate(d.getDate() + 1)
+      return d.toISOString().split('T')[0]
+    })()
+    const noteParts = [
+      formPickupAddress && `Pickup: ${formPickupAddress}`,
+      formDropAddress && `Drop-off: ${formDropAddress}`,
+      rentalType === 'hour' && `Duration: ${formHours}h`,
+      extraNotes,
+    ].filter(Boolean)
+    return {
+      carId: id,
+      pickupDate: formPickupDate,
+      dropDate: effectiveDropDate || formPickupDate,
+      rentalType,
+      ...(rentalType === 'hour' && { totalHours: formHours }),
+      driverDetails: { name: formName, email: formEmail, phone: formPhone },
+      notes: noteParts.join(' · ') || undefined,
+      ...(formPickupLocation && { pickupLocationId: formPickupLocation }),
+      ...(formDropLocation   && { dropLocationId:   formDropLocation }),
+    }
+  }
+
+  const handleFormBook = async () => {
+    if (!validateForm()) return
+    setFormSubmitting(true)
+    try {
+      const label = rentalType === 'hour' ? `[Per Hour · ${formHours}h]`
+        : rentalType === 'airport' ? '[Airport Transfer]' : ''
+      const { data } = await createBooking(buildFormPayload(label))
+      toast.success('Booking created!')
+      navigate(`/payment/${data.data.booking._id}`)
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to create booking')
+    } finally {
+      setFormSubmitting(false)
+    }
+  }
+
+  const handleFormRequest = async () => {
+    if (!validateForm()) return
+    setFormSubmitting(true)
+    try {
+      const label = rentalType === 'hour' ? `[Booking Request · Per Hour · ${formHours}h]`
+        : rentalType === 'airport' ? '[Booking Request · Airport Transfer]' : '[Booking Request]'
+      const { data } = await createBooking(buildFormPayload(label))
+      toast.success('Booking request submitted!')
+      navigate(`/payment/${data.data.booking._id}`)
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to submit request')
+    } finally {
+      setFormSubmitting(false)
+    }
   }
 
   if (loading) return <div className="flex justify-center items-center h-64"><Spinner size="lg" /></div>
   if (!car) return null
 
-  const included   = car.features?.length ? car.features : DEFAULT_INCLUDED
-  const shareUrl   = typeof window !== 'undefined' ? window.location.href : ''
+  const included = car.features?.length ? car.features : DEFAULT_INCLUDED
+  const POSSIBLE_EXCLUDED = ['GPS Navigation', 'Sunroof', 'Child Seat', 'Ski Rack']
+  const excluded = POSSIBLE_EXCLUDED.filter(
+    f => !included.some(inc => inc.toLowerCase().includes(f.toLowerCase()) || f.toLowerCase().includes(inc.toLowerCase()))
+  )
+  const shareUrl = typeof window !== 'undefined' ? window.location.href : ''
 
   const RENTAL_TYPES = [
     { key: 'day',     label: 'Per Day',          price: car.pricePerDay },
@@ -216,15 +313,16 @@ export default function CarDetail() {
   ]
   const activeType = RENTAL_TYPES.find(t => t.key === rentalType)
   const primaryImg = car.images?.find(i => i.isPrimary) || car.images?.[0]
+  const heroImg = car.images?.[activeImg] || primaryImg
 
   return (
     <div className="bg-white min-h-screen">
 
       {/* ── Hero Banner ───────────────────────────────────────────── */}
       <div className="relative min-h-[320px] md:min-h-[440px] overflow-hidden">
-        {primaryImg ? (
+        {heroImg ? (
           <img
-            src={primaryImg.url}
+            src={heroImg.url}
             alt={`${car.brand} ${car.model}`}
             className="absolute inset-0 w-full h-full object-cover object-center"
           />
@@ -260,8 +358,8 @@ export default function CarDetail() {
           {/* ── LEFT COLUMN ─────────────────────────────────────── */}
           <div className="flex-1 min-w-0">
 
-            {/* Thumbnail strip (if multiple images) */}
-            {car.images?.length > 1 && (
+            {/* Thumbnail strip — always shown when there are images */}
+            {car.images?.length > 0 && (
               <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
                 {car.images.map((img, i) => (
                   <button
@@ -271,7 +369,7 @@ export default function CarDetail() {
                       activeImg === i ? 'border-teal-500' : 'border-transparent opacity-50 hover:opacity-100'
                     }`}
                   >
-                    <img src={img.url} alt="" className="w-full h-full object-contain object-center bg-gray-50" />
+                    <img src={img.url} alt="" className="w-full h-full object-cover object-center bg-gray-100" />
                   </button>
                 ))}
               </div>
@@ -357,14 +455,16 @@ export default function CarDetail() {
                     </li>
                   ))}
                 </ul>
-                <ul className="space-y-2.5">
-                  {DEFAULT_EXCLUDED.map(f => (
-                    <li key={f} className="flex items-center gap-2.5 text-sm text-gray-400">
-                      <span className="w-4 h-4 shrink-0 flex items-center justify-center text-red-400 font-bold">✕</span>
-                      {f}
-                    </li>
-                  ))}
-                </ul>
+                {excluded.length > 0 && (
+                  <ul className="space-y-2.5">
+                    {excluded.map(f => (
+                      <li key={f} className="flex items-center gap-2.5 text-sm text-gray-400">
+                        <span className="w-4 h-4 shrink-0 flex items-center justify-center text-red-400 font-bold">✕</span>
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </div>
 
@@ -408,7 +508,7 @@ export default function CarDetail() {
           </div>
 
           {/* ── RIGHT SIDEBAR ────────────────────────────────────── */}
-          <div className="w-full lg:w-80 xl:w-[360px] shrink-0 lg:sticky lg:top-24">
+          <div className="w-full lg:w-80 xl:w-[360px] shrink-0">
             <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-md">
 
               {/* Price + rental type dropdown */}
@@ -457,23 +557,192 @@ export default function CarDetail() {
                 )}
               </div>
 
-              {/* Book buttons */}
-              <div className="px-5 pt-5 pb-3 space-y-3">
-                <button
-                  onClick={handleBook}
-                  disabled={!car.isAvailable}
-                  className="w-full bg-teal-500 hover:bg-teal-600 disabled:opacity-40 text-white font-bold py-3.5 rounded-xl transition-colors text-sm tracking-wide uppercase"
-                >
-                  {car.isAvailable ? 'Book Instantly' : 'Currently Unavailable'}
-                </button>
+              {/* Inline Booking Form */}
+              <div className="px-5 pt-4 pb-5 space-y-4 border-t border-gray-100">
 
-                <button
-                  onClick={handleRequest}
-                  disabled={!car.isAvailable}
-                  className="w-full border-2 border-teal-500 text-teal-600 hover:bg-teal-50 disabled:opacity-40 font-bold py-3.5 rounded-xl transition-colors text-sm tracking-wide uppercase"
-                >
-                  Request for Booking
-                </button>
+                {/* Full Name */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                  <input
+                    type="text"
+                    value={formName}
+                    onChange={e => setFormName(e.target.value)}
+                    placeholder="John Doe"
+                    className="w-full border border-gray-300 rounded px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 text-gray-800 placeholder-gray-400"
+                  />
+                </div>
+
+                {/* Email */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+                  <input
+                    type="email"
+                    value={formEmail}
+                    onChange={e => setFormEmail(e.target.value)}
+                    placeholder="sample@yourcompany.com"
+                    className="w-full border border-gray-300 rounded px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 text-gray-800 placeholder-gray-400"
+                  />
+                </div>
+
+                {/* Phone */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                  <input
+                    type="tel"
+                    value={formPhone}
+                    onChange={e => setFormPhone(e.target.value)}
+                    placeholder="+91 98765 43210"
+                    className="w-full border border-gray-300 rounded px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 text-gray-800 placeholder-gray-400"
+                  />
+                </div>
+
+                {/* Branch Locations */}
+                {locations.length > 0 && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Pickup Branch</label>
+                      <select value={formPickupLocation} onChange={e => setFormPickupLocation(e.target.value)}
+                        className="w-full border border-gray-300 rounded px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 text-gray-800 bg-white">
+                        <option value="">— Select branch —</option>
+                        {locations.filter(l => l.isPickupAvailable !== false).map(l => (
+                          <option key={l._id} value={l._id}>{l.name}, {l.city}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Drop-off Branch</label>
+                      <select value={formDropLocation} onChange={e => setFormDropLocation(e.target.value)}
+                        className="w-full border border-gray-300 rounded px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 text-gray-800 bg-white">
+                        <option value="">— Same as pickup —</option>
+                        {locations.filter(l => l.isDropAvailable !== false).map(l => (
+                          <option key={l._id} value={l._id}>{l.name}, {l.city}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                {/* Pickup Address */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Pickup Address</label>
+                  <input
+                    type="text"
+                    value={formPickupAddress}
+                    onChange={e => setFormPickupAddress(e.target.value)}
+                    placeholder="34 Main Street"
+                    className="w-full border border-gray-300 rounded px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 text-gray-800 placeholder-gray-400"
+                  />
+                </div>
+
+                {/* Pickup Date */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Pickup Date</label>
+                  <input
+                    type="date"
+                    value={formPickupDate}
+                    min={today}
+                    onChange={e => setFormPickupDate(e.target.value)}
+                    className="w-full border border-gray-300 rounded px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 text-gray-800"
+                  />
+                </div>
+
+                {/* Pickup Time */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Pickup Time</label>
+                  <select
+                    value={formPickupTime}
+                    onChange={e => setFormPickupTime(e.target.value)}
+                    className="w-full border border-gray-300 rounded px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 text-gray-800 bg-white"
+                  >
+                    <option value="">— Please choose an option —</option>
+                    {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+
+                {/* Per Hour: duration selector */}
+                {rentalType === 'hour' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Duration (Hours)</label>
+                    <div className="flex flex-wrap gap-2">
+                      {HOUR_OPTIONS.map(h => (
+                        <button
+                          key={h}
+                          type="button"
+                          onClick={() => setFormHours(h)}
+                          className={`px-3 py-1.5 rounded text-sm font-semibold border-2 transition-colors ${
+                            formHours === h
+                              ? 'bg-teal-500 border-teal-500 text-white'
+                              : 'border-gray-300 text-gray-600 hover:border-teal-400'
+                          }`}
+                        >
+                          {h}h
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Per Day + Airport: Drop Off Address */}
+                {(rentalType === 'day' || rentalType === 'airport') && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Drop Off Address</label>
+                    <input
+                      type="text"
+                      value={formDropAddress}
+                      onChange={e => setFormDropAddress(e.target.value)}
+                      placeholder={rentalType === 'airport' ? 'Airport Name' : 'Drop-off Location'}
+                      className="w-full border border-gray-300 rounded px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 text-gray-800 placeholder-gray-400"
+                    />
+                  </div>
+                )}
+
+                {/* Per Day: Drop Off Date + Time */}
+                {rentalType === 'day' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Drop Off Date</label>
+                      <input
+                        type="date"
+                        value={formDropDate}
+                        min={formPickupDate || today}
+                        onChange={e => setFormDropDate(e.target.value)}
+                        className="w-full border border-gray-300 rounded px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 text-gray-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Drop Off Time</label>
+                      <select
+                        value={formDropTime}
+                        onChange={e => setFormDropTime(e.target.value)}
+                        className="w-full border border-gray-300 rounded px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 text-gray-800 bg-white"
+                      >
+                        <option value="">— Please choose an option —</option>
+                        {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                  </>
+                )}
+
+                {/* Buttons */}
+                <div className="space-y-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleFormRequest}
+                    disabled={formSubmitting || !car.isAvailable}
+                    className="w-full bg-gray-100 hover:bg-gray-200 disabled:opacity-40 text-gray-700 font-bold py-3 rounded transition-colors text-sm tracking-wide"
+                  >
+                    {formSubmitting ? 'Processing…' : 'Request for Booking'}
+                  </button>
+                  <div className="text-center text-xs text-gray-400 font-medium">OR</div>
+                  <button
+                    type="button"
+                    onClick={handleFormBook}
+                    disabled={formSubmitting || !car.isAvailable}
+                    className="w-full bg-teal-500 hover:bg-teal-600 disabled:opacity-40 text-white font-bold py-3 rounded transition-colors text-sm tracking-wide"
+                  >
+                    {formSubmitting ? 'Processing…' : car.isAvailable ? 'Book Instantly' : 'Currently Unavailable'}
+                  </button>
+                </div>
               </div>
 
               {/* Availability Calendar */}
@@ -496,12 +765,8 @@ export default function CarDetail() {
                 ))}
               </div>
 
-              {/* Footer: views + share */}
+              {/* Footer: share */}
               <div className="px-5 pb-5 space-y-3">
-                <p className="text-center text-xs text-gray-400">
-                  Viewed <span className="font-semibold text-gray-600">{viewCount}</span> times this week
-                </p>
-
                 {/* Share */}
                 <div className="flex items-center justify-center gap-3">
                   <span className="text-xs text-gray-400 flex items-center gap-1">

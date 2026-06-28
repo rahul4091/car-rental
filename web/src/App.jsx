@@ -5,12 +5,6 @@ import Layout from './components/layout/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 import useAuthStore from './store/authStore'
 
-function ScrollToTop() {
-  const { pathname } = useLocation()
-  useEffect(() => { window.scrollTo(0, 0) }, [pathname])
-  return null
-}
-
 import Home from './pages/Home'
 import Cars from './pages/Cars'
 import CarDetail from './pages/CarDetail'
@@ -27,6 +21,13 @@ import BookingConfirmation from './pages/BookingConfirmation'
 import Admin from './pages/Admin'
 import About from './pages/About'
 import Contact from './pages/Contact'
+import BlogPost from './pages/BlogPost'
+
+function ScrollToTop() {
+  const { pathname } = useLocation()
+  useEffect(() => { window.scrollTo(0, 0) }, [pathname])
+  return null
+}
 
 function AppInit() {
   const { user, fetchMe } = useAuthStore()
@@ -37,6 +38,11 @@ function AppInit() {
   return null
 }
 
+function RootRedirect() {
+  const { user } = useAuthStore()
+  return <Navigate to={user ? '/home' : '/login'} replace />
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -45,7 +51,7 @@ export default function App() {
       <Toaster position="top-right" richColors />
       <Routes>
         {/* Auth pages — no header/footer */}
-        <Route path="/" element={<Navigate to="/login" replace />} />
+        <Route path="/" element={<RootRedirect />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -57,6 +63,7 @@ export default function App() {
           <Route path="/locations" element={<Locations />} />
           <Route path="/about" element={<About />} />
           <Route path="/contact" element={<Contact />} />
+          <Route path="/blog/:id" element={<BlogPost />} />
 
           <Route path="/dashboard" element={
             <ProtectedRoute><Dashboard /></ProtectedRoute>
@@ -64,7 +71,9 @@ export default function App() {
           <Route path="/profile" element={
             <ProtectedRoute><Profile /></ProtectedRoute>
           } />
-          <Route path="/booking/:carId" element={<Booking />} />
+          <Route path="/booking/:carId" element={
+            <ProtectedRoute><Booking /></ProtectedRoute>
+          } />
           <Route path="/payment/:bookingId" element={
             <ProtectedRoute><Payment /></ProtectedRoute>
           } />

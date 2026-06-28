@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams, useLocation } from 'react-router-dom'
 import {
   Search, X, ChevronDown, ChevronUp, Star,
   MapPin, Users, Settings, Fuel, Phone, Clock,
   Check,
 } from 'lucide-react'
 import { getCars, getCarFilters } from '../api/cars'
+import { getLocationById } from '../api/locations'
 import Spinner from '../components/ui/Spinner'
 
 const TRANSMISSIONS = ['automatic', 'manual']
@@ -35,7 +36,7 @@ const RENTAL_TIPS = [
 ]
 
 // ── Horizontal list-style car card ──────────────────────────────────────────
-function CarListCard({ car }) {
+function CarListCard({ car, pickupLocation, dropLocation }) {
   const primaryImage = car.images?.find(i => i.isPrimary) || car.images?.[0]
   const features = car.features?.slice(0, 6) || []
   const half = Math.ceil(features.length / 2)
@@ -44,7 +45,8 @@ function CarListCard({ car }) {
 
   return (
     <Link
-      to={`/cars/${car._id}`}
+      to={pickupLocation ? `/booking/${car._id}` : `/cars/${car._id}`}
+      state={pickupLocation ? { pickupLocation, dropLocation: dropLocation || null } : undefined}
       className="bg-white border border-gray-200 rounded-xl overflow-hidden flex hover:shadow-lg transition-shadow duration-300 group"
     >
       {/* Image */}
@@ -206,6 +208,9 @@ function CheckGroup({ options, value, onChange }) {
 // ── Main component ───────────────────────────────────────────────────────────
 export default function Cars() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const routerLocation = useLocation()
+  const [pickupLocation, setPickupLocation] = useState(routerLocation.state?.pickupLocation || null)
+  const [dropLocation, setDropLocation]     = useState(routerLocation.state?.dropLocation   || null)
   const [cars, setCars]               = useState([])
   const [pagination, setPagination]   = useState({})
   const [filterData, setFilterData]   = useState({ brands: [], types: [], fuelTypes: [], priceRange: { min: 0, max: 10000 } })
@@ -221,11 +226,21 @@ export default function Cars() {
     maxPrice:     searchParams.get('maxPrice')     || '',
     sort:         searchParams.get('sort')         || 'price-asc',
     page:         parseInt(searchParams.get('page') || '1'),
+    location:     searchParams.get('location')     || '',
   })
 
   useEffect(() => {
     getCarFilters().then(({ data }) => setFilterData(data.data)).catch(() => {})
   }, [])
+
+  // Fix #10: rehydrate pickupLocation from API when navigating directly via URL (e.g. refresh)
+  useEffect(() => {
+    if (query.location && !pickupLocation) {
+      getLocationById(query.location)
+        .then(res => setPickupLocation(res.data.data.location))
+        .catch(() => {})
+    }
+  }, [query.location])
 
   useEffect(() => {
     setLoading(true)
@@ -240,8 +255,10 @@ export default function Cars() {
   const update = (updates) => setQuery(prev => ({ ...prev, ...updates, page: 1 }))
 
   const clearFilters = () => {
-    setQuery({ search: '', type: '', brand: '', transmission: '', fuelType: '', minPrice: '', maxPrice: '', sort: 'price-asc', page: 1 })
+    setQuery({ search: '', type: '', brand: '', transmission: '', fuelType: '', minPrice: '', maxPrice: '', sort: 'price-asc', page: 1, location: '' })
     setSearchParams({})
+    setPickupLocation(null)
+    setDropLocation(null)
   }
 
   const hasFilters = query.type || query.brand || query.transmission || query.fuelType || query.minPrice || query.maxPrice || query.search
@@ -339,6 +356,19 @@ export default function Cars() {
 
           {/* ── Car List ──────────────────────────────────────────────────── */}
           <main className="flex-1 min-w-0">
+            {/* Location banner */}
+            {pickupLocation && (
+              <div className="mb-4 bg-teal-50 border border-teal-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-sm text-teal-800">
+                  <MapPin className="w-4 h-4 text-teal-500 shrink-0" />
+                  <span><span className="font-semibold">Pickup:</span> {pickupLocation.name}, {pickupLocation.city}</span>
+                  {dropLocation && (
+                    <span className="ml-2"><span className="font-semibold">Drop-off:</span> {dropLocation.name}, {dropLocation.city}</span>
+                  )}
+                </div>
+                <span className="text-xs text-teal-600 font-medium shrink-0">Click any car to book</span>
+              </div>
+            )}
             {/* Result count */}
             {!loading && (
               <p className="text-sm text-gray-500 mb-4">
@@ -365,7 +395,7 @@ export default function Cars() {
             ) : (
               <>
                 <div className="space-y-5">
-                  {cars.map(car => <CarListCard key={car._id} car={car} />)}
+                  {cars.map(car => <CarListCard key={car._id} car={car} pickupLocation={pickupLocation} dropLocation={dropLocation} />)}
                 </div>
 
                 {/* Pagination */}
@@ -475,7 +505,7 @@ export default function Cars() {
                   { letter: 'p', bg: 'bg-pink-600' },
                   { letter: 'in', bg: 'bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600' },
                 ].map(({ letter, bg }) => (
-                  <a key={letter} href="#"
+                  <a key={letter} href="#" onClick={e => e.preventDefault()}
                     className={`w-9 h-9 rounded-full ${bg} flex items-center justify-center text-white text-xs font-bold hover:opacity-90 transition-opacity uppercase`}>
                     {letter}
                   </a>

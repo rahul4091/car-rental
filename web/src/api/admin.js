@@ -25,6 +25,9 @@ export const createAdminCar    = (data)   => api.post('/cars', data)
 export const updateAdminCar    = (id, data) => api.patch(`/cars/${id}`, data)
 export const deleteAdminCar    = (id)     => api.delete(`/cars/${id}`)
 
+// Car image upload (admin)
+export const uploadAdminCarImages = (id, formData) => api.post(`/cars/${id}/images`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+
 // Locations (admin)
 export const getAdminLocations    = ()          => api.get('/locations', { params: { active: 'false' } })
 export const createAdminLocation  = (data)      => api.post('/locations', data)

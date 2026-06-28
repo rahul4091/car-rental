@@ -64,8 +64,9 @@ export const confirmPayment = async (req, res) => {
     throw new AppError("Payment verification failed: invalid signature", 400);
   }
 
+  // Fix #2: bind lookup to the requesting user so user A cannot confirm user B's payment
   const payment = await Payment.findOneAndUpdate(
-    { razorpayOrderId },
+    { razorpayOrderId, user: req.user._id },
     { status: "succeeded", razorpayPaymentId, razorpaySignature },
     { new: true }
   );

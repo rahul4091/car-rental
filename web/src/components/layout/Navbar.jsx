@@ -5,10 +5,11 @@ import { FaFacebookF, FaTwitter, FaInstagram } from 'react-icons/fa'
 import useAuthStore from '../../store/authStore'
 
 const NAV_LINKS = [
-  { to: '/home',    label: 'Home',    exact: true },
-  { to: '/cars',    label: 'Cars',    exact: true },
-  { to: '/about',   label: 'About' },
-  { to: '/contact', label: 'Contact' },
+  { to: '/home',      label: 'Home',      exact: true },
+  { to: '/cars',      label: 'Cars',      exact: true },
+  { to: '/locations', label: 'Locations', exact: true },
+  { to: '/about',     label: 'About' },
+  { to: '/contact',   label: 'Contact' },
 ]
 
 export default function Navbar() {
@@ -58,15 +59,15 @@ export default function Navbar() {
           </span>
           {/* Social links */}
           <div className="flex items-center gap-3">
-            <a href="#" aria-label="Facebook"
+            <a href="#" onClick={e => e.preventDefault()} aria-label="Facebook"
               className="w-7 h-7 rounded-full border border-gray-600 flex items-center justify-center text-gray-400 hover:text-white hover:border-teal-400 transition-colors">
               <FaFacebookF size={12} />
             </a>
-            <a href="#" aria-label="Twitter"
+            <a href="#" onClick={e => e.preventDefault()} aria-label="Twitter"
               className="w-7 h-7 rounded-full border border-gray-600 flex items-center justify-center text-gray-400 hover:text-white hover:border-teal-400 transition-colors">
               <FaTwitter size={12} />
             </a>
-            <a href="#" aria-label="Instagram"
+            <a href="#" onClick={e => e.preventDefault()} aria-label="Instagram"
               className="w-7 h-7 rounded-full border border-gray-600 flex items-center justify-center text-gray-400 hover:text-white hover:border-teal-400 transition-colors">
               <FaInstagram size={12} />
             </a>
@@ -121,7 +122,7 @@ export default function Navbar() {
                 </NavLink>
               ))}
 
-              {/* Booking — only for logged-in users */}
+              {/* My Bookings — only for logged-in users */}
               {user && (
                 <NavLink
                   to="/dashboard"
@@ -136,7 +137,7 @@ export default function Navbar() {
                     const active = isActive || isBookingActive
                     return (
                       <>
-                        Booking
+                        My Bookings
                         <span className={`absolute bottom-0 left-4 right-4 h-0.5 bg-teal-500 rounded-full transition-transform origin-left ${
                           active ? 'scale-x-100' : 'scale-x-0 group-hover:scale-x-100'
                         }`} />
@@ -249,7 +250,7 @@ export default function Navbar() {
                     }`
                   }}
                 >
-                  Booking
+                  My Bookings
                 </NavLink>
               )}
             </div>

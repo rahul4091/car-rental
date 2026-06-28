@@ -4,30 +4,7 @@ import { ChevronRight, ChevronDown, Shield, Star, Headphones, Phone } from 'luci
 import { getCars, getFeaturedCars, getCarFilters } from '../api/cars'
 import Spinner from '../components/ui/Spinner'
 import useAuthStore from '../store/authStore'
-
-const ARTICLES = [
-  {
-    id: 1,
-    date: 'June 12, 2025',
-    title: 'Top 5 Tips for First-Time Car Renters',
-    excerpt: 'Renting a car for the first time? Learn what to check before signing, how to avoid hidden fees, and the best way to inspect your vehicle.',
-    image: '/articles/first-time.jpg',
-  },
-  {
-    id: 2,
-    date: 'June 10, 2025',
-    title: 'How to Choose the Right Car for Your Road Trip',
-    excerpt: 'From fuel efficiency to luggage space and comfort, we break down everything you need to consider when picking the perfect road trip companion.',
-    image: '/articles/road-trip.jpg',
-  },
-  {
-    id: 3,
-    date: 'June 9, 2025',
-    title: 'Car Rental Insurance: What You Actually Need',
-    excerpt: 'Insurance can be confusing. We explain the difference between CDW, third-party liability, and your personal auto policy so you only pay for what matters.',
-    image: '/articles/insurance.jpg',
-  },
-]
+import { ARTICLES } from '../data/articles'
 
 const WHY_CHOOSE = [
   { icon: Shield, title: 'Variety of Car Brands', desc: 'Choose from an extensive range of top car brands to match your style and budget.' },
@@ -43,6 +20,25 @@ const SORT_OPTIONS = [
   { value: '-createdAt',  label: 'Newest First' },
 ]
 
+
+function ArticleImage({ src, alt }) {
+  const [error, setError] = useState(false)
+  if (error) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-gray-100 text-gray-300 text-4xl">
+        📰
+      </div>
+    )
+  }
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+      onError={() => setError(true)}
+    />
+  )
+}
 
 const TYPE_EMOJI = {
   sedan: '🚗', suv: '🚙', hatchback: '🚘', coupe: '🏎️',
@@ -318,14 +314,9 @@ export default function Home() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
           {ARTICLES.map(article => (
-            <div key={article.id} className="group border border-gray-100 rounded-xl overflow-hidden hover:shadow-lg transition-shadow">
+            <Link key={article.id} to={`/blog/${article.id}`} className="group border border-gray-100 rounded-xl overflow-hidden hover:shadow-lg transition-shadow block">
               <div className="h-52 bg-gray-200 overflow-hidden">
-                <img
-                  src={article.image}
-                  alt={article.title}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  onError={e => { e.target.style.display = 'none' }}
-                />
+                <ArticleImage src={article.image} alt={article.title} />
               </div>
               <div className="p-6">
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">
@@ -335,11 +326,11 @@ export default function Home() {
                   {article.title}
                 </h3>
                 <p className="text-sm text-gray-500 leading-relaxed mb-5">{article.excerpt}</p>
-                <Link to="/cars" className="inline-flex items-center gap-1.5 text-sm text-teal-500 font-medium hover:text-teal-600 transition-colors">
+                <span className="inline-flex items-center gap-1.5 text-sm text-teal-600 font-medium group-hover:text-teal-700 transition-colors">
                   Read More <ChevronRight className="w-4 h-4" />
-                </Link>
+                </span>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       </section>

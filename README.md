@@ -1,37 +1,38 @@
 # DriveEase — Car Rental Web App
 
-A full-stack car rental platform where users can browse cars, make bookings, and pay online. Admins can manage the fleet, locations, and all bookings.
+A full-stack car rental platform where users can browse cars, make bookings, and pay online. Admins can manage the fleet, locations, users, and all bookings through a dedicated dashboard.
 
 ## Tech Stack
 
 | Layer | Technology |
 |---|---|
-| Frontend | React 19, Vite, Tailwind CSS v4, Zustand, Axios, Stripe.js |
-| Backend | Node.js, Express 5, MongoDB, Mongoose |
-| Auth | JWT (access + refresh tokens), httpOnly cookies |
-| Payments | Stripe (PaymentIntents + webhooks) |
+| Frontend | React 19, Vite, Tailwind CSS v4, Zustand, Axios, React Router v7 |
+| Backend | Node.js, Express 4, MongoDB Atlas, Mongoose |
+| Auth | JWT (access + refresh tokens), httpOnly cookies, OTP-based password reset |
+| Payments | Razorpay (orders + webhooks) |
 | Storage | Cloudinary (car images, avatars, documents) |
-| Email | Nodemailer (SMTP) |
+| Email | Nodemailer via Resend SMTP |
 
 ## Project Structure
 
 ```
 car/
-├── api/          # Express backend
+├── api/                  # Express backend (port 5000)
 │   └── src/
 │       ├── server.js
 │       ├── config/       # DB, Cloudinary
 │       ├── model/        # Mongoose schemas
 │       ├── controllers/  # Route handlers
 │       ├── routes/       # Express routers
-│       ├── middleware/   # Auth, error handler, upload
-│       └── utils/        # JWT, email, OTP, logger
-└── web/          # React + Vite frontend
+│       ├── middleware/   # Auth, error handler, multer/Cloudinary upload
+│       ├── utils/        # JWT, email, OTP, logger (Winston)
+│       └── seed.js       # Seed script (cars, locations, users)
+└── web/                  # React + Vite frontend (port 5173)
     └── src/
-        ├── api/          # Axios functions (one file per domain)
+        ├── api/          # Axios client + domain helpers (cars, bookings, payments…)
         ├── store/        # Zustand auth store
-        ├── components/   # Layout, Navbar, Footer, UI components
-        └── pages/        # Route-level page components
+        ├── components/   # Layout, Navbar, Footer, ProtectedRoute, UI components
+        └── pages/        # Route-level pages (Home, Cars, CarDetail, Booking, Admin…)
 ```
 
 ## Getting Started
@@ -39,13 +40,14 @@ car/
 ### Prerequisites
 
 - Node.js 18+
-- MongoDB running locally on port `27017` (or a MongoDB Atlas URI)
-- Cloudinary account (for image uploads)
-- Stripe account (for payments)
+- MongoDB Atlas cluster (or local MongoDB on port `27017`)
+- Cloudinary account
+- Razorpay account (test keys work for development)
+- Resend account (or any SMTP provider)
 
 ### 1. Configure environment variables
 
-Create `api/.env` (never commit this file):
+Create `api/.env` (never commit this file — see `api/.env.example`):
 
 ```env
 # Server
@@ -53,7 +55,7 @@ NODE_ENV=development
 PORT=5000
 
 # Database
-MONGO_URL=mongodb://localhost:27017/car_rental
+MONGO_URL=mongodb+srv://<user>:<pass>@<cluster>.mongodb.net/car_rental
 
 # JWT
 JWT_SECRET=<random string, min 32 chars>
@@ -69,35 +71,50 @@ CLOUDINARY_CLOUD_NAME=
 CLOUDINARY_API_KEY=
 CLOUDINARY_API_SECRET=
 
-# Stripe
-STRIPE_SECRET_KEY=sk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
+# Razorpay
+RAZORPAY_KEY_ID=rzp_test_...
+RAZORPAY_KEY_SECRET=...
+RAZORPAY_WEBHOOK_SECRET=...
 
-# Email (Gmail example — use an App Password, not your account password)
-EMAIL_HOST=smtp.gmail.com
+# Email — Resend SMTP
+EMAIL_HOST=smtp.resend.com
 EMAIL_PORT=587
-EMAIL_USER=your_email@gmail.com
-EMAIL_PASSWORD=your_16_char_app_password
-EMAIL_FROM=noreply@driveease.com
+EMAIL_USER=resend
+EMAIL_PASSWORD=<resend_api_key>
+EMAIL_FROM=onboarding@resend.dev
 
 # Rate limiting
 RATE_LIMIT_WINDOW_MS=900000
 RATE_LIMIT_MAX=100
 ```
 
-> Cloudinary and Stripe are optional for basic local development — file uploads and payments will fail gracefully without them.
+### 2. Seed the database (optional)
 
-### 2. Start the backend
+Populates cars, locations, and demo users (1 admin + 3 regular users):
 
 ```bash
 cd api
 npm install
+npm run seed
+```
+
+Seed credentials:
+
+| Role | Email | Password |
+|---|---|---|
+| Admin | admin@driveease.com | admin123 |
+| User | rahul@example.com | password123 |
+
+### 3. Start the backend
+
+```bash
+cd api
 npm run dev     # nodemon watches src/ and auto-restarts
 ```
 
-Backend runs at **http://localhost:5000**
+Backend runs at **http://localhost:5000**. Health check: `GET /api/health`
 
-### 3. Start the frontend
+### 4. Start the frontend
 
 ```bash
 cd web
@@ -111,26 +128,48 @@ Frontend runs at **http://localhost:5173**. All `/api/*` requests are proxied to
 
 ```bash
 cd web
-npm run build      # outputs to dist/
+npm run build      # outputs to web/dist/
 npm run preview    # serve the production build locally
 ```
+
+## Pages & Routes
+
+| Path | Access | Description |
+|---|---|---|
+| `/` | Public | Redirects to `/login` or `/home` |
+| `/login` | Public | Login page |
+| `/register` | Public | Registration page |
+| `/forgot-password` | Public | OTP-based password reset |
+| `/home` | Public | Landing page with featured cars |
+| `/cars` | Public | Car listing with filters & search |
+| `/cars/:id` | Public | Car detail, gallery, reviews, availability |
+| `/locations` | Public | Branch locations |
+| `/about` | Public | About page |
+| `/contact` | Public | Contact form |
+| `/dashboard` | Auth | Booking history, cancellations |
+| `/profile` | Auth | Profile settings, avatar & license upload |
+| `/booking/:carId` | Auth | Booking form (dates, location, coupon) |
+| `/payment/:bookingId` | Auth | Razorpay payment page |
+| `/bookings/:id` | Auth | Booking detail |
+| `/admin` | Admin | Admin dashboard |
 
 ## Features
 
 ### User
 - Browse and search cars with filters (type, brand, transmission, fuel type, price range)
-- View car details, image gallery, specs, and reviews
+- View car detail: image gallery, specs, ratings, and user reviews
 - Check availability by date range
 - Book a car with pickup/drop location selection and coupon codes
-- Pay securely via Stripe
-- Dashboard with booking history and cancellation (refund policy applies)
-- Profile management, avatar upload, driving license upload
+- Pay securely via Razorpay (test & live mode)
+- Dashboard with booking history and cancellation
+- Profile management with avatar and driving licence upload
+- OTP email for password reset
 
 ### Admin
-- Dashboard stats (bookings, revenue, fleet overview)
-- Manage cars (create, update, upload images, soft-delete)
-- Manage locations
-- Manage all bookings and users
+- Dashboard stats (revenue, bookings, fleet overview)
+- Manage cars: create, edit, upload images to Cloudinary, toggle availability/featured
+- Manage locations, coupons, and users
+- View and update all bookings and payments
 - Issue refunds
 
 ## API Overview
@@ -147,24 +186,35 @@ Base path: `/api/v1`
 | Locations | `/locations` |
 | Users | `/users` |
 | Admin | `/admin` |
-
-See [PROJECT.md](./PROJECT.md) for the full endpoint reference, data models, and data flow diagrams.
+| Contact | `/contact` |
 
 ## Authentication Flow
 
 1. Login/Register returns an access token (JSON body) and sets an httpOnly refresh token cookie.
 2. The Axios client attaches `Authorization: Bearer <token>` to every request.
-3. On a `401`, the client silently POSTs to `/auth/refresh-token` (cookie sent automatically), retries the original request with the new token.
-4. Zustand persists the access token and user to `localStorage` to survive page refreshes.
+3. On a `401`, the client silently POSTs to `/auth/refresh-token` (cookie sent automatically) and retries the original request with the new token.
+4. Zustand persists the access token and user object to survive page refreshes.
 
 ## Booking & Payment Flow
 
 ```
-Browse → Car Detail → Check Availability
-  → Booking page (dates, locations, coupon)
-    → POST /bookings → booking created with price breakdown (base + 18% GST + security deposit)
-      → Payment page
-        → POST /payments/create-intent → Stripe clientSecret
-          → Stripe.js processes payment
-            → POST /payments/confirm → booking confirmed
+Browse Cars → Car Detail → Check Availability
+  → Booking form (dates, pickup/drop location, coupon)
+    → POST /bookings → booking created with price breakdown
+      (base rate × days + 18% GST + security deposit)
+        → Payment page
+          → POST /payments/create-intent → Razorpay order ID
+            → Razorpay checkout (client-side)
+              → POST /payments/confirm → signature verified → booking confirmed
+                → Confirmation email sent via Resend
 ```
+
+## Image Upload Flow
+
+Car images and profile avatars are uploaded directly to Cloudinary via the backend:
+
+- `POST /api/v1/cars/:id/images` — upload car images (`multipart/form-data`, field: `images[]`)
+- `PATCH /api/v1/users/avatar` — upload profile avatar (field: `avatar`)
+- `POST /api/v1/cars/:id/documents/:type` — upload car documents (insurance, registration, pollution)
+
+Files are stored in Cloudinary folders `car-rental/cars`, `car-rental/profiles`, and `car-rental/documents` respectively. A `1200×800` fill transformation is applied to car images automatically.

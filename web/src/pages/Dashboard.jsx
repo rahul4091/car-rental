@@ -5,6 +5,7 @@ import { getMyBookings, cancelBooking, rescheduleBooking } from '../api/bookings
 import { createReview } from '../api/reviews'
 import useAuthStore from '../store/authStore'
 import Spinner from '../components/ui/Spinner'
+import ConfirmModal from '../components/ui/ConfirmModal'
 import { toast } from 'sonner'
 
 const STATUS_STYLES = {
@@ -197,6 +198,7 @@ export default function Dashboard() {
   const [loading, setLoading]                 = useState(true)
   const [reviewBooking, setReviewBooking]     = useState(null)
   const [rescheduleBookingItem, setRescheduleBookingItem] = useState(null)
+  const [cancelConfirmId, setCancelConfirmId] = useState(null)
 
   useEffect(() => {
     getMyBookings()
@@ -205,8 +207,9 @@ export default function Dashboard() {
       .finally(() => setLoading(false))
   }, [])
 
-  const handleCancel = async (id) => {
-    if (!confirm('Cancel this booking?')) return
+  const handleCancelConfirmed = async () => {
+    const id = cancelConfirmId
+    setCancelConfirmId(null)
     try {
       await cancelBooking(id)
       setBookings(prev => prev.map(b => b._id === id ? { ...b, status: 'cancelled' } : b))
@@ -226,6 +229,14 @@ export default function Dashboard() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {cancelConfirmId && (
+        <ConfirmModal
+          message="Cancel this booking? This cannot be undone."
+          confirmLabel="Yes, cancel"
+          onConfirm={handleCancelConfirmed}
+          onCancel={() => setCancelConfirmId(null)}
+        />
+      )}
       {reviewBooking && (
         <ReviewModal
           booking={reviewBooking}
@@ -353,7 +364,7 @@ export default function Dashboard() {
                             <CalendarClock className="w-3 h-3" /> Reschedule
                           </button>
                           <button
-                            onClick={() => handleCancel(booking._id)}
+                            onClick={() => setCancelConfirmId(booking._id)}
                             className="text-xs text-red-600 hover:underline"
                           >
                             Cancel

@@ -11,6 +11,7 @@ const bookingSchema = new mongoose.Schema(
     dropDate: { type: Date, required: true },
     totalDays: { type: Number, required: true },
     totalHours: { type: Number },
+    rentalType: { type: String, enum: ["day", "hour", "airport"], default: "day" },
     pricePerDay: { type: Number, required: true },
     baseAmount: { type: Number, required: true },
     discountAmount: { type: Number, default: 0 },
@@ -20,7 +21,14 @@ const bookingSchema = new mongoose.Schema(
     coupon: { type: mongoose.Schema.Types.ObjectId, ref: "Coupon" },
     status: {
       type: String,
-      enum: ["pending", "confirmed", "active", "completed", "cancelled", "no-show"],
+      enum: [
+        "pending",
+        "confirmed",
+        "active",
+        "completed",
+        "cancelled",
+        "no-show",
+      ],
       default: "pending",
     },
     paymentStatus: {
@@ -28,7 +36,10 @@ const bookingSchema = new mongoose.Schema(
       enum: ["pending", "paid", "refunded", "partially-refunded", "failed"],
       default: "pending",
     },
-    paymentMethod: { type: String, enum: ["card", "upi", "netbanking", "wallet", "cash"] },
+    paymentMethod: {
+      type: String,
+      enum: ["card", "upi", "netbanking", "wallet", "cash"],
+    },
     stripePaymentIntentId: String,
     razorpayOrderId: String,
     cancellationReason: String,
@@ -55,7 +66,7 @@ const bookingSchema = new mongoose.Schema(
     adminNotes: String,
     isReviewed: { type: Boolean, default: false },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 bookingSchema.pre("save", async function (next) {

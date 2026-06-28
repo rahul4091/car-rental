@@ -133,7 +133,7 @@ export default function Register() {
                     required
                     value={form.password}
                     onChange={set('password')}
-                    placeholder="Min. 6 characters"
+                    placeholder="Min. 8 characters"
                     className="w-full px-3 py-2.5 pr-10 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-400 transition-colors"
                   />
                   <button
