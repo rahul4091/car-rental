@@ -35,36 +35,25 @@ export default function Locations() {
 
   const handleDrop = (loc) => {
     if (drop?._id === loc._id) { setDrop(null); return }
-    if (!pickup) {
-      setPickup(loc)
-      setPickupError(false)
-      toast.info(`"${loc.name}" set as pickup. Now choose a different drop-off location (optional).`)
-      return
-    }
     setDrop(loc)
     if (pickup?._id === loc._id) setPickup(null)
   }
 
   const handleFindCars = () => {
-    // If only drop-off is set, treat it as pickup (same branch for pickup & drop)
-    const effectivePickup = pickup || drop
-    const effectiveDrop   = pickup ? drop : null
-
-    if (!effectivePickup) {
+    if (!pickup && !drop) {
       setPickupError(true)
       toast.error('Please select at least one location')
       window.scrollTo({ top: 0, behavior: 'smooth' })
       return
     }
 
-    if (!pickup && drop) {
-      toast.info(`Showing cars at ${drop.name} — you can change the pickup branch on the booking page.`)
-    }
+    // Use whichever location is set as the branch for car availability search
+    const searchBranch = pickup || drop
+    const params = new URLSearchParams({ location: searchBranch._id })
+    if (pickup && drop && pickup._id !== drop._id) params.set('dropLocation', drop._id)
 
-    const params = new URLSearchParams({ location: effectivePickup._id })
-    if (effectiveDrop) params.set('dropLocation', effectiveDrop._id)
     navigate(`/cars?${params.toString()}`, {
-      state: { pickupLocation: effectivePickup, dropLocation: effectiveDrop },
+      state: { pickupLocation: pickup || null, dropLocation: drop || null },
     })
   }
 

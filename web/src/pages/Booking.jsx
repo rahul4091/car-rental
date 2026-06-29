@@ -39,6 +39,8 @@ export default function Booking() {
   const [couponApplied, setCouponApplied] = useState(false)
   const [pickupLocation, setPickupLocation] = useState(state.pickupLocation?._id || '')
   const [dropLocation, setDropLocation] = useState(state.dropLocation?._id || '')
+  const [customPickupAddr, setCustomPickupAddr] = useState('')
+  const [customDropAddr, setCustomDropAddr] = useState('')
   const [locations, setLocations] = useState([])
 
   const today = new Date().toISOString().split('T')[0]
@@ -98,18 +100,24 @@ export default function Booking() {
     return true
   }
 
-  const buildPayload = (extraNotes = '') => ({
-    carId,
-    pickupDate,
-    dropDate: effectiveDropDate || pickupDate,
-    rentalType,
-    ...(rentalType === 'hour' && { totalHours: hours }),
-    notes: [extraNotes, notes].filter(Boolean).join(' · ') || undefined,
-    couponCode: couponApplied ? coupon : undefined,
-    driverDetails: { name, email, phone },
-    pickupLocationId: pickupLocation || undefined,
-    dropLocationId: dropLocation || undefined,
-  })
+  const buildPayload = (extraNotes = '') => {
+    const addrNote = [
+      customPickupAddr ? `Custom pickup: ${customPickupAddr}` : '',
+      customDropAddr   ? `Custom drop-off: ${customDropAddr}` : '',
+    ].filter(Boolean).join(' | ')
+    return {
+      carId,
+      pickupDate,
+      dropDate: effectiveDropDate || pickupDate,
+      rentalType,
+      ...(rentalType === 'hour' && { totalHours: hours }),
+      notes: [extraNotes, addrNote, notes].filter(Boolean).join(' · ') || undefined,
+      couponCode: couponApplied ? coupon : undefined,
+      driverDetails: { name, email, phone },
+      pickupLocationId: pickupLocation || undefined,
+      dropLocationId: dropLocation || undefined,
+    }
+  }
 
   const handleApplyCoupon = async () => {
     if (!coupon.trim()) return
@@ -409,16 +417,26 @@ export default function Booking() {
             </div>
 
             {/* Pickup & Drop Location */}
-            {locations.length > 0 && (
-              <div className="bg-white rounded-2xl border border-gray-200 p-6">
-                <h2 className="font-bold text-gray-900 mb-5 flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-teal-500" /> Pickup &amp; Drop-off Location
-                </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                  <div>
-                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-1.5">Pickup Location</label>
-                    <div className="flex items-center gap-2 border border-gray-200 rounded-xl px-3 py-2.5 focus-within:border-teal-400 transition-colors">
-                      <MapPin className="w-4 h-4 text-teal-500 shrink-0" />
+            <div className="bg-white rounded-2xl border border-gray-200 p-6">
+              <h2 className="font-bold text-gray-900 mb-5 flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-teal-500" /> Pickup &amp; Drop-off Location
+              </h2>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                {/* Pickup — shows text input when a drop-off branch is chosen */}
+                <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-1.5">Pickup Location</label>
+                  <div className="flex items-center gap-2 border border-gray-200 rounded-xl px-3 py-2.5 focus-within:border-teal-400 transition-colors">
+                    <MapPin className="w-4 h-4 text-teal-500 shrink-0" />
+                    {dropLocation ? (
+                      <input
+                        type="text"
+                        value={customPickupAddr}
+                        onChange={e => setCustomPickupAddr(e.target.value)}
+                        placeholder="Enter your pickup address…"
+                        className="flex-1 text-sm outline-none text-gray-800 bg-transparent placeholder-gray-400"
+                      />
+                    ) : (
                       <select value={pickupLocation} onChange={e => setPickupLocation(e.target.value)}
                         className="flex-1 text-sm outline-none text-gray-800 bg-transparent">
                         <option value="">— Select branch —</option>
@@ -426,12 +444,24 @@ export default function Booking() {
                           <option key={l._id} value={l._id}>{l.name}, {l.city}</option>
                         ))}
                       </select>
-                    </div>
+                    )}
                   </div>
-                  <div>
-                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-1.5">Drop-off Location</label>
-                    <div className="flex items-center gap-2 border border-gray-200 rounded-xl px-3 py-2.5 focus-within:border-teal-400 transition-colors">
-                      <MapPin className="w-4 h-4 text-teal-500 shrink-0" />
+                </div>
+
+                {/* Drop-off — shows text input when a pickup branch is chosen */}
+                <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-1.5">Drop-off Location</label>
+                  <div className="flex items-center gap-2 border border-gray-200 rounded-xl px-3 py-2.5 focus-within:border-teal-400 transition-colors">
+                    <MapPin className="w-4 h-4 text-teal-500 shrink-0" />
+                    {pickupLocation ? (
+                      <input
+                        type="text"
+                        value={customDropAddr}
+                        onChange={e => setCustomDropAddr(e.target.value)}
+                        placeholder="Enter your drop-off address…"
+                        className="flex-1 text-sm outline-none text-gray-800 bg-transparent placeholder-gray-400"
+                      />
+                    ) : (
                       <select value={dropLocation} onChange={e => setDropLocation(e.target.value)}
                         className="flex-1 text-sm outline-none text-gray-800 bg-transparent">
                         <option value="">— Same as pickup —</option>
@@ -439,11 +469,11 @@ export default function Booking() {
                           <option key={l._id} value={l._id}>{l.name}, {l.city}</option>
                         ))}
                       </select>
-                    </div>
+                    )}
                   </div>
                 </div>
               </div>
-            )}
+            </div>
 
             {/* Special Requests */}
             <div className="bg-white rounded-2xl border border-gray-200 p-6">

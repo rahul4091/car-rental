@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { ChevronRight, ChevronDown, Shield, Star, Headphones, Phone } from 'lucide-react'
+import { ChevronRight, ChevronDown, Shield, Star, Headphones, Phone, Quote } from 'lucide-react'
 import { getCars, getFeaturedCars, getCarFilters } from '../api/cars'
 import Spinner from '../components/ui/Spinner'
 import useAuthStore from '../store/authStore'
@@ -10,6 +10,57 @@ const WHY_CHOOSE = [
   { icon: Shield, title: 'Variety of Car Brands', desc: 'Choose from an extensive range of top car brands to match your style and budget.' },
   { icon: Star, title: 'Best Rate Guarantee', desc: 'We offer the most competitive rates in the market with no hidden charges.' },
   { icon: Headphones, title: 'Awesome Customer Support', desc: 'Our dedicated team is available around the clock to assist you anytime.' },
+]
+
+const TESTIMONIALS = [
+  {
+    name: 'Priya Sharma',
+    location: 'Mumbai',
+    rating: 5,
+    text: 'Absolutely seamless experience from booking to drop-off. The car was spotless and the pricing was exactly as shown — no hidden fees. Will definitely rent again!',
+    avatar: 'PS',
+    car: 'Toyota Fortuner',
+  },
+  {
+    name: 'Arjun Mehta',
+    location: 'Bangalore',
+    rating: 5,
+    text: 'I was sceptical at first but the process was surprisingly quick. Got a great deal on an SUV for a weekend trip and the customer support team was incredibly helpful.',
+    avatar: 'AM',
+    car: 'Mahindra XUV700',
+  },
+  {
+    name: 'Sneha Patel',
+    location: 'Ahmedabad',
+    rating: 4,
+    text: 'Rented a sedan for a business trip. Clean, well-maintained vehicle and super easy pick-up. Minor delay at the location but the team resolved it quickly.',
+    avatar: 'SP',
+    car: 'Honda City',
+  },
+  {
+    name: 'Rahul Verma',
+    location: 'Delhi',
+    rating: 5,
+    text: 'Best car rental platform in India hands down. The variety of cars is unmatched and the Best Rate Guarantee is real — I checked three other sites.',
+    avatar: 'RV',
+    car: 'Hyundai Creta',
+  },
+  {
+    name: 'Anita Nair',
+    location: 'Kochi',
+    rating: 5,
+    text: 'Used this service for a family road trip and it was fantastic. The car was comfortable, fuel-efficient, and exactly what was shown in the photos.',
+    avatar: 'AN',
+    car: 'Kia Seltos',
+  },
+  {
+    name: 'Vikram Singh',
+    location: 'Jaipur',
+    rating: 4,
+    text: "Great selection and competitive prices. The online booking took under 3 minutes. I'll be recommending this to all my colleagues for corporate travel.",
+    avatar: 'VS',
+    car: 'Maruti Ertiga',
+  },
 ]
 
 const SORT_OPTIONS = [
@@ -299,6 +350,48 @@ export default function Home() {
                 </div>
                 <h3 className="text-white font-bold text-lg mb-3">{title}</h3>
                 <p className="text-indigo-200 text-sm leading-relaxed">{desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Customer Reviews ─────────────────────────────────────── */}
+      <section className="py-20 bg-gray-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-14">
+            <h2 className="text-3xl font-bold text-gray-900 mb-3">What Our Customers Say</h2>
+            <p className="text-gray-500">Trusted by thousands of happy renters across India</p>
+            <div className="flex items-center justify-center gap-1.5 mt-4">
+              {[...Array(5)].map((_, i) => (
+                <Star key={i} className="w-5 h-5 fill-amber-400 text-amber-400" />
+              ))}
+              <span className="ml-2 text-gray-600 font-semibold text-sm">4.8 / 5 &nbsp;·&nbsp; 2,400+ reviews</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {TESTIMONIALS.map(({ name, location, rating, text, avatar, car }) => (
+              <div key={name} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex flex-col gap-4 hover:shadow-md transition-shadow">
+                <Quote className="w-8 h-8 text-teal-400 shrink-0" />
+                <p className="text-gray-600 text-sm leading-relaxed flex-1">{text}</p>
+                <div className="flex items-center gap-1 mt-1">
+                  {[...Array(5)].map((_, i) => (
+                    <Star
+                      key={i}
+                      className={`w-4 h-4 ${i < rating ? 'fill-amber-400 text-amber-400' : 'text-gray-200 fill-gray-200'}`}
+                    />
+                  ))}
+                </div>
+                <div className="flex items-center gap-3 pt-2 border-t border-gray-100">
+                  <div className="w-10 h-10 rounded-full bg-teal-500 flex items-center justify-center text-white font-bold text-sm shrink-0">
+                    {avatar}
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-900 text-sm">{name}</p>
+                    <p className="text-xs text-gray-400">{location} &nbsp;·&nbsp; Rented {car}</p>
+                  </div>
+                </div>
               </div>
             ))}
           </div>

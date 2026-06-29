@@ -43,10 +43,11 @@ function CarListCard({ car, pickupLocation, dropLocation }) {
   const leftFeat  = features.slice(0, half)
   const rightFeat = features.slice(half)
 
+  const hasLocation = !!(pickupLocation || dropLocation)
   return (
     <Link
-      to={pickupLocation ? `/booking/${car._id}` : `/cars/${car._id}`}
-      state={pickupLocation ? { pickupLocation, dropLocation: dropLocation || null } : undefined}
+      to={hasLocation ? `/booking/${car._id}` : `/cars/${car._id}`}
+      state={hasLocation ? { pickupLocation: pickupLocation || null, dropLocation: dropLocation || null } : undefined}
       className="bg-white border border-gray-200 rounded-xl overflow-hidden flex hover:shadow-lg transition-shadow duration-300 group"
     >
       {/* Image */}
@@ -235,7 +236,7 @@ export default function Cars() {
 
   // Fix #10: rehydrate pickupLocation from API when navigating directly via URL (e.g. refresh)
   useEffect(() => {
-    if (query.location && !pickupLocation) {
+    if (query.location && !pickupLocation && !dropLocation) {
       getLocationById(query.location)
         .then(res => setPickupLocation(res.data.data.location))
         .catch(() => {})
@@ -357,13 +358,18 @@ export default function Cars() {
           {/* ── Car List ──────────────────────────────────────────────────── */}
           <main className="flex-1 min-w-0">
             {/* Location banner */}
-            {pickupLocation && (
+            {(pickupLocation || dropLocation) && (
               <div className="mb-4 bg-teal-50 border border-teal-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 text-sm text-teal-800">
+                <div className="flex items-center gap-2 text-sm text-teal-800 flex-wrap">
                   <MapPin className="w-4 h-4 text-teal-500 shrink-0" />
-                  <span><span className="font-semibold">Pickup:</span> {pickupLocation.name}, {pickupLocation.city}</span>
+                  {pickupLocation && (
+                    <span><span className="font-semibold">Pickup:</span> {pickupLocation.name}, {pickupLocation.city}</span>
+                  )}
                   {dropLocation && (
-                    <span className="ml-2"><span className="font-semibold">Drop-off:</span> {dropLocation.name}, {dropLocation.city}</span>
+                    <span className={pickupLocation ? 'ml-2' : ''}><span className="font-semibold">Drop-off:</span> {dropLocation.name}, {dropLocation.city}</span>
+                  )}
+                  {!pickupLocation && dropLocation && (
+                    <span className="text-teal-600 italic text-xs ml-1">(pickup: same branch)</span>
                   )}
                 </div>
                 <span className="text-xs text-teal-600 font-medium shrink-0">Click any car to book</span>
